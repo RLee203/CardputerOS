@@ -25,8 +25,13 @@ static const Theme THEMES[] = {
 };
 static constexpr int NUM_THEMES = 4;
 
-static int themeIdx  = 0;
+static int themeIdx   = 0;
 static int brightness = 128;
+
+static const uint32_t SLEEP_OPTIONS[] = { 0, 10000, 20000, 30000, 60000 };
+static const char*    SLEEP_LABELS[]  = { "Off", "10s", "20s", "30s", "60s" };
+static constexpr int  NUM_SLEEP = 5;
+static int sleepIdx = 0;
 
 static void applyTheme(int idx) {
     const Theme& t = THEMES[idx];
@@ -46,6 +51,7 @@ static void saveSettings() {
     JsonDocument doc;
     doc["brightness"] = brightness;
     doc["theme"]      = themeIdx;
+    doc["sleep"]      = sleepIdx;
     serializeJson(doc, f);
     f.close();
 }
@@ -58,9 +64,12 @@ void settingsLoadFromFS() {
     if (deserializeJson(doc, f) == DeserializationError::Ok) {
         brightness = doc["brightness"] | 128;
         themeIdx   = doc["theme"]      | 0;
+        sleepIdx   = doc["sleep"]      | 0;
         if (themeIdx < 0 || themeIdx >= NUM_THEMES) themeIdx = 0;
+        if (sleepIdx < 0 || sleepIdx >= NUM_SLEEP)  sleepIdx = 0;
         M5Cardputer.Display.setBrightness(brightness);
         applyTheme(themeIdx);
+        sleepTimeoutMs = SLEEP_OPTIONS[sleepIdx];
     }
     f.close();
 }
@@ -108,7 +117,7 @@ static bool          settDirty  = true;
 static int           settSel    = 0;
 static int           helpScroll = 0;
 
-static constexpr int MENU_ITEMS   = 5;   // WiFi, Brightness, Text Color, Help, About
+static constexpr int MENU_ITEMS   = 6;   // WiFi, Brightness, Text Color, Help, Screen Sleep, About
 static constexpr int LIST_VISIBLE = 11;  // rows that fit above footer (112px / 10px)
 
 // WiFi networks list state
@@ -200,6 +209,15 @@ static void drawMenu() {
                 }
                 break;
             case 4:
+                snprintf(buf, sizeof(buf), "Screen Sleep: %s", SLEEP_LABELS[sleepIdx]);
+                d.print(buf);
+                if (sel) {
+                    d.setTextColor(C_DIM, bg);
+                    d.setCursor(4, y + FONT_H + 4);
+                    d.print("fn+, = prev  fn+/ = next");
+                }
+                break;
+            case 5:
                 d.print("About: Cardputer OS v1.1");
                 if (sel) {
                     snprintf(buf, sizeof(buf), "IP: %s", WifiMgr.localIP().c_str());
@@ -387,6 +405,24 @@ static void handleMenu() {
     if (settSel == 2) {
         if (ev.left)  { themeIdx = (themeIdx + NUM_THEMES - 1) % NUM_THEMES; applyTheme(themeIdx); saveSettings(); settDirty = true; }
         if (ev.right) { themeIdx = (themeIdx + 1) % NUM_THEMES;              applyTheme(themeIdx); saveSettings(); settDirty = true; }
+    }
+
+    // Screen Sleep: fn+, / fn+/ cycles timeout options
+    if (settSel == 4) {
+        if (ev.left) {
+            sleepIdx = (sleepIdx + NUM_SLEEP - 1) % NUM_SLEEP;
+            sleepTimeoutMs = SLEEP_OPTIONS[sleepIdx];
+            resetSleepTimer();
+            saveSettings();
+            settDirty = true;
+        }
+        if (ev.right) {
+            sleepIdx = (sleepIdx + 1) % NUM_SLEEP;
+            sleepTimeoutMs = SLEEP_OPTIONS[sleepIdx];
+            resetSleepTimer();
+            saveSettings();
+            settDirty = true;
+        }
     }
 
     if (ev.enter) {

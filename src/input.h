@@ -10,3 +10,4 @@ struct KeyEvent {
 };
 
 KeyEvent readKeys();
+void     resetSleepTimer();  // call when non-keyboard activity should prevent sleep

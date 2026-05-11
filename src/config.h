@@ -34,6 +34,9 @@ constexpr uint32_t CURSOR_BLINK_MS = 500;
 constexpr uint32_t WIFI_TIMEOUT_MS = 15000;
 constexpr uint32_t SSH_RECV_MS     = 20;
 
+// Sleep timeout in ms; 0 = disabled. Changed at runtime by Settings.
+inline uint32_t sleepTimeoutMs = 0;
+
 // ── Storage ────────────────────────────────────────────────────────────────
 constexpr const char* PROFILES_PATH = "/profiles.json";
 constexpr const char* WIFI_PATH     = "/wifi.json";

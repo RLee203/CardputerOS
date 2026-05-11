@@ -290,6 +290,7 @@ void appGamesLoop() {
         if (s.tab)   jp &= ~JOYPAD_SELECT;
 
         gb.direct.joypad = jp;
+        if (jp != 0xFF) resetSleepTimer();  // held button = active gameplay
     }
 
     // Control hint overlay — shown for 4 s after ROM loads
