@@ -39,7 +39,7 @@ A multi-app operating system for the **M5Stack Cardputer** (ESP32-S3), built wit
 - Grayscale display, ~60 fps target
 - **Compatible files:** `.gb`, `.gbc`
 - Controls: WASD = D-Pad, `\` = A button, Space = B button, Enter = Start, Tab = Select
-- > ⚠️ The emulator has not been tested on hardware yet. ROM compatibility and performance are unknown.
+- > ⚠️ The emulator has been tested to work on hardware but not fully tested. ROM compatibility and performance are unknown.
 
 ### File Manager
 - Browse files on microSD card or internal flash (LittleFS)
