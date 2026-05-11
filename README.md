@@ -107,7 +107,7 @@ A multi-app operating system for the **M5Stack Cardputer** (ESP32-S3), built wit
 Download `cardputer-os-v1.1-merged.bin` from the [Releases](../../releases) page and flash with [esptool](https://github.com/espressif/esptool):
 
 ```bash
-esptool.py --chip esp32s3 --port COM3 write_flash 0x0 cardputer-os-v1.1-merged.bin
+esptool.py --chip esp32s3 --port (COM) write_flash 0x0 cardputer-os-v1.1-merged.bin
 ```
 
 Replace `COM3` with your actual port (`/dev/ttyUSB0` on Linux/Mac).
