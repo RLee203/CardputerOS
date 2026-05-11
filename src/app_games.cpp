@@ -27,20 +27,38 @@ static int      romSel   = 0;
 static bool     sdOk     = false;
 static char     errMsg[64];
 
-static uint8_t*      romData  = nullptr;
-static uint32_t      romSize  = 0;
-static uint8_t*      cartRam  = nullptr;
-static uint_fast32_t cartRamSize = 0;
+// ROM is streamed from SD in 16 KB banks — bank 0 stays resident, the
+// current switchable bank is loaded on demand.  Total ROM RAM: 32 KB.
+static constexpr uint32_t BANK_SIZE = 16384;
+
+static File          romFile;
+static uint32_t      romSize      = 0;
+static uint8_t*      bank0Cache   = nullptr;   // always loaded
+static uint8_t*      bankNCache   = nullptr;   // current switchable bank
+static int           cachedBankN  = -1;
+
+static uint8_t*      cartRam      = nullptr;
+static uint_fast32_t cartRamSize  = 0;
 
 static struct gb_s   gb;
 static uint16_t      lineBuf[GB_W];
 static unsigned long lastFrame    = 0;
-static unsigned long hintUntil    = 0;   // show control hint until this time
+static unsigned long hintUntil    = 0;
 
 // ── Peanut-GB callbacks ────────────────────────────────────────────────────
 
 static uint8_t gbRomRead(struct gb_s*, const uint_fast32_t addr) {
-    return (addr < romSize) ? romData[addr] : 0xFF;
+    if (addr >= romSize) return 0xFF;
+    if (addr < BANK_SIZE) return bank0Cache[addr];
+    int bankIdx = (int)(addr >> 14);    // addr / 16384
+    int offset  = (int)(addr & 0x3FFF); // addr % 16384
+    if (bankIdx != cachedBankN) {
+        romFile.seek((uint32_t)bankIdx << 14);
+        uint32_t toRead = min(BANK_SIZE, romSize - ((uint32_t)bankIdx << 14));
+        romFile.read(bankNCache, toRead);
+        cachedBankN = bankIdx;
+    }
+    return bankNCache[offset];
 }
 
 static uint8_t gbCartRamRead(struct gb_s*, const uint_fast32_t addr) {
@@ -130,31 +148,38 @@ static void showError() {
 // ── ROM loader ─────────────────────────────────────────────────────────────
 
 static void freeRom() {
-    if (romData) { free(romData); romData = nullptr; }
-    if (cartRam) { free(cartRam); cartRam = nullptr; }
-    romSize = 0; cartRamSize = 0;
+    if (bank0Cache) { free(bank0Cache); bank0Cache = nullptr; }
+    if (bankNCache) { free(bankNCache); bankNCache = nullptr; }
+    if (romFile)    { romFile.close(); }
+    if (cartRam)    { free(cartRam);   cartRam    = nullptr; }
+    romSize = 0; cartRamSize = 0; cachedBankN = -1;
 }
 
 static bool loadRom(int idx) {
     freeRom();
 
     String path = "/" + romFiles[idx];
-    File f = SD.open(path.c_str(), FILE_READ);
-    if (!f) { snprintf(errMsg, sizeof(errMsg), "Can't open: %s", romFiles[idx].c_str()); return false; }
+    romFile = SD.open(path.c_str(), FILE_READ);
+    if (!romFile) {
+        snprintf(errMsg, sizeof(errMsg), "Can't open: %s", romFiles[idx].c_str());
+        return false;
+    }
 
-    romSize = (uint32_t)f.size();
-    romData = (uint8_t*)malloc(romSize);
-    if (!romData) {
-        f.close();
-        snprintf(errMsg, sizeof(errMsg), "Not enough RAM (%lu B)", (unsigned long)romSize);
+    romSize    = (uint32_t)romFile.size();
+    bank0Cache = (uint8_t*)malloc(BANK_SIZE);
+    bankNCache = (uint8_t*)malloc(BANK_SIZE);
+    if (!bank0Cache || !bankNCache) {
+        romFile.close();
+        if (bank0Cache) { free(bank0Cache); bank0Cache = nullptr; }
+        if (bankNCache) { free(bankNCache); bankNCache = nullptr; }
+        snprintf(errMsg, sizeof(errMsg), "Bank cache alloc failed");
         return false;
     }
-    if ((uint32_t)f.read(romData, romSize) != romSize) {
-        f.close(); freeRom();
-        snprintf(errMsg, sizeof(errMsg), "ROM read failed");
-        return false;
-    }
-    f.close();
+
+    // Pre-load bank 0 (always resident)
+    romFile.seek(0);
+    romFile.read(bank0Cache, min(BANK_SIZE, romSize));
+    cachedBankN = -1;
 
     enum gb_init_error_e ret = gb_init(&gb, gbRomRead, gbCartRamRead, gbCartRamWrite, gbError, nullptr);
     if (ret != GB_INIT_NO_ERROR) {
@@ -168,17 +193,17 @@ static bool loadRom(int idx) {
     cartRamSize = (uint_fast32_t)csz;
     if (cartRamSize > 0) {
         cartRam = (uint8_t*)calloc(cartRamSize, 1);
-        // cartRam stays null if alloc fails; reads return 0xFF (no crash, just no saves)
+        // null cartRam is handled gracefully by the read/write callbacks
     }
 
     gb_init_lcd(&gb, gbLcdLine);
     gb.direct.interlace  = 0;
     gb.direct.frame_skip = 0;
-    gb.direct.joypad     = 0xFF;  // all buttons released
+    gb.direct.joypad     = 0xFF;
 
     M5Cardputer.Display.fillScreen(0x000000);
     lastFrame = millis();
-    hintUntil = millis() + 4000;  // show control hint for 4 seconds
+    hintUntil = millis() + 4000;
     return true;
 }
 
