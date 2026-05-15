@@ -169,6 +169,24 @@ pio run --target upload
 
 ---
 
+## IR Receiver Wiring
+
+For IR learning in the `IR Remote` app, connect a 3-pin IR receiver module to the Cardputer Port A / Grove-style header:
+
+- Cardputer `G` -> receiver `GND`
+- Cardputer `5V` -> receiver `VCC`
+- Cardputer `G2` / `GPIO2` -> receiver `OUT`
+
+For the receiver module used during testing:
+
+- black wire -> `GND`
+- red wire -> `VCC`
+- white wire -> `OUT`
+
+The built-in Cardputer IR transmitter handles sending saved codes. The external receiver is only needed when learning new signals.
+
+---
+
 ## Release Notes
 
 ### v1.3
