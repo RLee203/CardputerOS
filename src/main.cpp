@@ -14,13 +14,16 @@
 #include "app_settings.h"
 #include "app_games.h"
 #include "app_files.h"
+#include "app_ir_remote.h"
+#include "app_voice_memos.h"
+#include "app_placeholder.h"
 
 Terminal term;
 
 // ── App state ──────────────────────────────────────────────────────────────
 enum class State {
     BOOT,
-    LAUNCHER, APP_SSH, APP_MP3, APP_NOTES, APP_SETTINGS, APP_GAMES, APP_FILES
+    LAUNCHER, APP_SSH, APP_MP3, APP_NOTES, APP_SETTINGS, APP_GAMES, APP_FILES, APP_IR_REMOTE, APP_VOICE_MEMOS, APP_PLACEHOLDER
 };
 
 static State state = State::BOOT;
@@ -63,6 +66,30 @@ void launchApp(AppScene scene) {
         case AppScene::FILES:
             appFilesEnter();
             state = State::APP_FILES;
+            break;
+        case AppScene::GPS:
+            appPlaceholderEnter("GPS");
+            state = State::APP_PLACEHOLDER;
+            break;
+        case AppScene::LORA:
+            appPlaceholderEnter("LoRa");
+            state = State::APP_PLACEHOLDER;
+            break;
+        case AppScene::IR_REMOTE:
+            appIrRemoteEnter();
+            state = State::APP_IR_REMOTE;
+            break;
+        case AppScene::PHOTOS:
+            appPlaceholderEnter("Photos");
+            state = State::APP_PLACEHOLDER;
+            break;
+        case AppScene::VOICE_MEMOS:
+            appVoiceMemosEnter();
+            state = State::APP_VOICE_MEMOS;
+            break;
+        case AppScene::HID_KEYBOARD:
+            appPlaceholderEnter("HID Keyboard");
+            state = State::APP_PLACEHOLDER;
             break;
     }
 }
@@ -121,7 +148,7 @@ void handleBoot() {
         // Version / tagline
         d.setTextSize(1);
         d.setTextColor(C_DIM, C_BG);
-        const char* ver = "v1.1  --  M5Stack Cardputer";
+        const char* ver = "v1.3  --  M5Stack Cardputer";
         int vw = strlen(ver) * FONT_W;
         d.setCursor((SCREEN_W - vw) / 2, 56);
         d.print(ver);
@@ -160,6 +187,7 @@ void handleBoot() {
 void setup() {
     auto cfg = M5.config();
     M5Cardputer.begin(cfg, true);
+    initBatteryMonitoring();
     M5Cardputer.Display.setRotation(1);
     M5Cardputer.Display.setFont(&fonts::Font0);
     M5Cardputer.Display.setTextSize(1);
@@ -176,5 +204,8 @@ void loop() {
         case State::APP_SETTINGS: appSettingsLoop();   break;
         case State::APP_GAMES:    appGamesLoop();      break;
         case State::APP_FILES:    appFilesLoop();      break;
+        case State::APP_IR_REMOTE: appIrRemoteLoop();  break;
+        case State::APP_VOICE_MEMOS: appVoiceMemosLoop(); break;
+        case State::APP_PLACEHOLDER: appPlaceholderLoop(); break;
     }
 }

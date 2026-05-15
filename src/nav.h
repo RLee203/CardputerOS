@@ -1,11 +1,28 @@
 #pragma once
 #include <M5Cardputer.h>
+#include <M5Unified.h>
+#include <utility/power/IP5306_Class.hpp>
 #include "config.h"
 
-enum class AppScene { SSH, MP3, NOTES, SETTINGS, GAMES, FILES };
+enum class AppScene { SSH, MP3, NOTES, SETTINGS, GAMES, FILES, GPS, LORA, IR_REMOTE, PHOTOS, VOICE_MEMOS, HID_KEYBOARD };
 
 void goHome();
 void launchApp(AppScene scene);
+
+inline m5::IP5306_Class g_cardputerBatteryPmic{};
+inline bool g_cardputerBatteryPmicReady = false;
+
+inline void initBatteryMonitoring() {
+    g_cardputerBatteryPmicReady = g_cardputerBatteryPmic.begin();
+}
+
+inline int getBatteryPercent() {
+    if (g_cardputerBatteryPmicReady) {
+        int pct = g_cardputerBatteryPmic.getBatteryLevel();
+        if (pct >= 0) return pct;
+    }
+    return M5Cardputer.Power.getBatteryLevel();
+}
 
 // ── Battery widget ──────────────────────────────────────────────────────────
 // Draws a small battery icon + % centred in the status bar.
@@ -14,9 +31,7 @@ void launchApp(AppScene scene);
 // Pass SCREEN_W-43 (=197) to right-align within the status bar.
 inline void drawBatteryWidget(uint32_t bg, int bx = 97) {
     auto& d   = M5Cardputer.Display;
-    int   pct = M5Cardputer.Power.getBatteryLevel();   // 0-100, or -1 if unknown
-    // isCharging() and getBatteryVoltage() return unreliable values on M5Cardputer
-    // (StampS3 charge IC not accessible via M5Unified), so colour by level only.
+    int   pct = getBatteryPercent();   // 0-100, or -1 if unknown
     uint32_t col = pct > 50 ? (uint32_t)0x00CC00
                  : pct > 20 ? (uint32_t)0xCCAA00
                             : (uint32_t)0xFF3333;

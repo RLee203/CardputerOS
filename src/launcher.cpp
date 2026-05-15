@@ -16,23 +16,90 @@ static constexpr int CELL_Y[2] = { 15,  74 };
 static constexpr int CELL_W    = 78;
 static constexpr int CELL_H[2] = { 57,  59 };
 static constexpr uint32_t LBKG = 0x141414;
+static constexpr int APPS_PER_PAGE = NCOLS * NROWS;
 
-static constexpr uint32_t TCOL[6] = {
-    0x1155BB,  // SSH      blue
-    0xAA4400,  // MP3      amber
-    0x116633,  // Notes    green
-    0xCC2200,  // Games    red
-    0x5522AA,  // Settings purple
-    0x226677,  // Files    teal
-};
-static const char*    TLABEL[6]  = { "SSH", "MP3", "Notes", "Games", "Settings", "Files" };
-static const char     TKEY[6]    = { 's', 'm', 'n', 'g', 'p', 'f' };
-static const AppScene TSCENE[6]  = {
-    AppScene::SSH, AppScene::MP3, AppScene::NOTES,
-    AppScene::GAMES, AppScene::SETTINGS, AppScene::FILES
+struct AppEntry {
+    const char* label;
+    char hotkey;
+    AppScene scene;
+    uint32_t color;
 };
 
-static int selRow = 0, selCol = 0;
+static const AppEntry APPS[] = {
+    { "SSH", 's', AppScene::SSH, 0x1155BB },
+    { "MP3", 'm', AppScene::MP3, 0xAA4400 },
+    { "Notes", 'n', AppScene::NOTES, 0x116633 },
+    { "Games", 'g', AppScene::GAMES, 0xCC2200 },
+    { "Settings", 'p', AppScene::SETTINGS, 0x5522AA },
+    { "Files", 'f', AppScene::FILES, 0x226677 },
+    { "GPS", 'x', AppScene::GPS, 0x005E7A },
+    { "LoRa", 'l', AppScene::LORA, 0x7A3E00 },
+    { "IR Remote", 'r', AppScene::IR_REMOTE, 0x7A002E },
+    { "Photos", 'h', AppScene::PHOTOS, 0x3A3A8C },
+    { "VoiceMemo", 'v', AppScene::VOICE_MEMOS, 0x6A005A },
+    { "HID Keybd", 'b', AppScene::HID_KEYBOARD, 0x0050A8 },
+};
+static constexpr int APP_COUNT = (int)(sizeof(APPS) / sizeof(APPS[0]));
+
+static int selRow = 0, selCol = 0, selPage = 0;
+
+static void drawAll();
+
+static int pageCount() {
+    return (APP_COUNT + APPS_PER_PAGE - 1) / APPS_PER_PAGE;
+}
+
+static int currentIndex(int row, int col) {
+    return selPage * APPS_PER_PAGE + row * NCOLS + col;
+}
+
+static int currentIndex() {
+    return currentIndex(selRow, selCol);
+}
+
+static bool pageHasCell(int page, int row, int col) {
+    int idx = page * APPS_PER_PAGE + row * NCOLS + col;
+    return idx < APP_COUNT;
+}
+
+static void clampSelectionForPage() {
+    if (pageHasCell(selPage, selRow, selCol)) return;
+    for (int r = NROWS - 1; r >= 0; --r) {
+        for (int c = NCOLS - 1; c >= 0; --c) {
+            if (pageHasCell(selPage, r, c)) {
+                selRow = r;
+                selCol = c;
+                return;
+            }
+        }
+    }
+    selRow = 0;
+    selCol = 0;
+}
+
+static bool switchPage(int delta) {
+    int next = selPage + delta;
+    if (next < 0 || next >= pageCount()) return false;
+    selPage = next;
+    clampSelectionForPage();
+    drawAll();
+    return true;
+}
+
+static void moveToPageStart() {
+    selCol = 0;
+    if (!pageHasCell(selPage, selRow, selCol)) {
+        selRow = 0;
+        clampSelectionForPage();
+    }
+}
+
+static void moveToPageEnd() {
+    selCol = NCOLS - 1;
+    if (!pageHasCell(selPage, selRow, selCol)) {
+        clampSelectionForPage();
+    }
+}
 
 // ── Icons ──────────────────────────────────────────────────────────────────
 
@@ -95,21 +162,74 @@ static void iSettings(int cx, int cy, uint32_t tc) {
     d.fillRect(cx+8,  cy-2, 5, 4, 0xFFFFFF);
 }
 
+static void iGPS(int cx, int cy) {
+    auto& d = M5Cardputer.Display;
+    d.drawCircle(cx, cy - 2, 8, 0xFFFFFF);
+    d.fillCircle(cx, cy - 2, 2, 0xFFFFFF);
+    d.drawLine(cx, cy + 6, cx - 5, cy + 14, 0xFFFFFF);
+    d.drawLine(cx, cy + 6, cx + 5, cy + 14, 0xFFFFFF);
+}
+
+static void iLora(int cx, int cy) {
+    auto& d = M5Cardputer.Display;
+    d.drawFastVLine(cx, cy - 10, 16, 0xFFFFFF);
+    d.drawCircle(cx - 6, cy - 1, 4, 0xFFFFFF);
+    d.drawCircle(cx + 6, cy - 1, 4, 0xFFFFFF);
+    d.drawArc(cx, cy - 1, 12, 10, 220, 320, 0xFFFFFF);
+}
+
+static void iRemote(int cx, int cy) {
+    auto& d = M5Cardputer.Display;
+    d.drawRoundRect(cx - 8, cy - 12, 16, 24, 3, 0xFFFFFF);
+    d.fillCircle(cx, cy - 7, 2, 0xFFFFFF);
+    d.fillCircle(cx - 3, cy - 1, 1, 0xFFFFFF);
+    d.fillCircle(cx + 3, cy - 1, 1, 0xFFFFFF);
+    d.fillCircle(cx - 3, cy + 5, 1, 0xFFFFFF);
+    d.fillCircle(cx + 3, cy + 5, 1, 0xFFFFFF);
+}
+
+static void iPhotos(int cx, int cy) {
+    auto& d = M5Cardputer.Display;
+    d.drawRoundRect(cx - 12, cy - 10, 24, 18, 3, 0xFFFFFF);
+    d.drawCircle(cx - 4, cy - 3, 2, 0xFFFFFF);
+    d.drawLine(cx - 10, cy + 6, cx - 2, cy, 0xFFFFFF);
+    d.drawLine(cx - 2, cy, cx + 2, cy + 3, 0xFFFFFF);
+    d.drawLine(cx + 2, cy + 3, cx + 10, cy - 5, 0xFFFFFF);
+}
+
+static void iRecorder(int cx, int cy) {
+    auto& d = M5Cardputer.Display;
+    d.fillRoundRect(cx - 5, cy - 9, 10, 14, 4, 0xFFFFFF);
+    d.drawFastVLine(cx, cy + 5, 5, 0xFFFFFF);
+    d.drawFastHLine(cx - 6, cy + 10, 12, 0xFFFFFF);
+    d.drawArc(cx, cy + 2, 10, 8, 200, 340, 0xFFFFFF);
+}
+
+static void iKeyboard(int cx, int cy) {
+    auto& d = M5Cardputer.Display;
+    d.drawRoundRect(cx - 12, cy - 8, 24, 16, 3, 0xFFFFFF);
+    d.drawFastHLine(cx - 8, cy - 2, 16, 0xFFFFFF);
+    d.drawFastHLine(cx - 8, cy + 3, 16, 0xFFFFFF);
+    d.drawFastVLine(cx - 4, cy - 5, 11, 0xFFFFFF);
+    d.drawFastVLine(cx + 4, cy - 5, 11, 0xFFFFFF);
+}
+
 // ── Cell ───────────────────────────────────────────────────────────────────
 
 static void drawCell(int row, int col) {
-    int idx = row * NCOLS + col;
+    int idx = selPage * APPS_PER_PAGE + row * NCOLS + col;
     int cx0 = CELL_X[col], cy0 = CELL_Y[row];
     int cw  = CELL_W,      ch  = CELL_H[row];
     auto& d = M5Cardputer.Display;
 
-    if (idx >= 6) {
+    if (idx >= APP_COUNT) {
         d.fillRoundRect(cx0, cy0, cw, ch, 6, 0x1E1E1E);
         d.drawRoundRect(cx0, cy0, cw, ch, 6, 0x333333);
         return;
     }
 
-    uint32_t tc  = TCOL[idx];
+    const auto& app = APPS[idx];
+    uint32_t tc  = app.color;
     bool     sel = (row == selRow && col == selCol);
 
     d.fillRoundRect(cx0, cy0, cw, ch, 6, tc);
@@ -130,15 +250,21 @@ static void drawCell(int row, int col) {
         case 3: iGames(icx, icy);        break;
         case 4: iSettings(icx, icy, tc); break;
         case 5: iFiles(icx, icy);        break;
+        case 6: iGPS(icx, icy);          break;
+        case 7: iLora(icx, icy);         break;
+        case 8: iRemote(icx, icy);       break;
+        case 9: iPhotos(icx, icy);       break;
+        case 10: iRecorder(icx, icy);    break;
+        case 11: iKeyboard(icx, icy);    break;
     }
 
     // Label
     d.setFont(&fonts::Font0);
     d.setTextSize(1);
     d.setTextColor(0xFFFFFF, tc);
-    int lw = strlen(TLABEL[idx]) * FONT_W;
+    int lw = strlen(app.label) * FONT_W;
     d.setCursor(cx0 + (cw - lw) / 2, cy0 + ch - 11);
-    d.print(TLABEL[idx]);
+    d.print(app.label);
 }
 
 // ── Status bar ─────────────────────────────────────────────────────────────
@@ -159,6 +285,11 @@ static void drawStatusBar() {
     d.setTextColor(ok ? (uint32_t)0x00BBFF : (uint32_t)0x555555, SBG);
     d.setCursor(SCREEN_W - iw - 2, 3);
     d.print(info.c_str());
+    char pageBuf[8];
+    snprintf(pageBuf, sizeof(pageBuf), "%d/%d", selPage + 1, pageCount());
+    d.setTextColor(0xDDDDDD, SBG);
+    d.setCursor((SCREEN_W - (int)strlen(pageBuf) * FONT_W) / 2, 3);
+    d.print(pageBuf);
     drawBatteryWidget(SBG);
 }
 
@@ -173,7 +304,7 @@ static void drawAll() {
 }
 
 void launcherEnter() {
-    selRow = 0; selCol = 0;
+    selRow = 0; selCol = 0; selPage = 0;
     drawAll();
 }
 
@@ -181,25 +312,53 @@ void launcherLoop() {
     auto ev = readKeys();
     if (!ev.changed) return;
 
-    int pr = selRow, pc = selCol;
-    if (ev.up    && selRow > 0)         selRow--;
-    if (ev.down  && selRow < NROWS - 1) selRow++;
-    if (ev.left  && selCol > 0)         selCol--;
-    if (ev.right && selCol < NCOLS - 1) selCol++;
+    if (ev.tab) {
+        if (!switchPage(1) && pageCount() > 1) {
+            selPage = 0;
+            clampSelectionForPage();
+            drawAll();
+        }
+        return;
+    }
+
+    int pr = selRow, pc = selCol, pp = selPage;
+    if (ev.up && selRow > 0) {
+        selRow--;
+    }
+    if (ev.down && selRow < NROWS - 1 && pageHasCell(selPage, selRow + 1, selCol)) {
+        selRow++;
+    }
+    if (ev.left) {
+        if (selCol > 0) selCol--;
+        else if (switchPage(-1)) {
+            moveToPageEnd();
+            drawAll();
+        }
+    }
+    if (ev.right) {
+        if (selCol < NCOLS - 1 && pageHasCell(selPage, selRow, selCol + 1)) selCol++;
+        else if (switchPage(1)) {
+            moveToPageStart();
+            drawAll();
+        }
+    }
 
     if (!ev.fnKey) {
         for (char c : ev.chars) {
             char lo = (char)tolower((unsigned char)c);
-            for (int i = 0; i < 5; i++)
-                if (TKEY[i] == lo) { launchApp(TSCENE[i]); return; }
+            for (int i = 0; i < APP_COUNT; i++)
+                if (APPS[i].hotkey == lo) { launchApp(APPS[i].scene); return; }
         }
     }
 
     if (ev.enter) {
-        int idx = selRow * NCOLS + selCol;
-        if (idx < 6) { launchApp(TSCENE[idx]); return; }
+        int idx = currentIndex();
+        if (idx < APP_COUNT) { launchApp(APPS[idx].scene); return; }
     }
 
+    if (selPage != pp) {
+        return;
+    }
     if (selRow != pr || selCol != pc) {
         drawCell(pr, pc);
         drawCell(selRow, selCol);

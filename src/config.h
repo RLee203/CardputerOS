@@ -42,10 +42,16 @@ constexpr const char* PROFILES_PATH = "/profiles.json";
 constexpr const char* WIFI_PATH     = "/wifi.json";
 constexpr int MAX_PROFILES          = 10;
 constexpr const char* NOTES_DIR     = "/notes";
+constexpr const char* VOICE_MEMOS_DIR = "/voice";
 
 // ── SSH ────────────────────────────────────────────────────────────────────
 constexpr int SSH_DEFAULT_PORT = 22;
 constexpr int SSH_RECV_BUF     = 512;
+
+// ── IR ─────────────────────────────────────────────────────────────────────
+constexpr int IR_TX_PIN = 44;
+constexpr int IR_RX_PIN = 2;
+constexpr const char* IR_CODES_PATH = "/ir_codes.json";
 
 // ── I2S / Audio ────────────────────────────────────────────────────────────
 constexpr int I2S_BCLK_PIN  = 41;

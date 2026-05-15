@@ -10,8 +10,9 @@ A multi-app operating system for the **M5Stack Cardputer** (ESP32-S3), built wit
 ## Features
 
 ### Launcher
-- Icon-based home screen with 6 apps in a 3×2 grid
-- Quick-launch by hotkey (s=SSH, m=MP3, n=Notes, g=Games, p=Settings, f=Files)
+- Icon-based home screen with multiple 3×2 pages
+- Quick-launch by hotkey across launcher pages
+- `Tab` page switching plus left/right page wrap navigation
 - Live WiFi status and battery indicator in the status bar
 
 ### SSH Terminal
@@ -21,6 +22,7 @@ A multi-app operating system for the **M5Stack Cardputer** (ESP32-S3), built wit
 - Ctrl+C / Ctrl+D / Ctrl+Z via fn+C / fn+D / fn+Z
 - Command history navigation, Tab completion passthrough
 - Cursor-position editing in the input line
+- Improved burst-output handling to reduce reboots on noisy Git commands
 
 ### MP3 Player
 - Plays MP3 files from a microSD card
@@ -32,6 +34,18 @@ A multi-app operating system for the **M5Stack Cardputer** (ESP32-S3), built wit
 - Create, edit, and delete plain-text notes stored on internal flash (LittleFS)
 - Full text editor with cursor movement and scrolling
 - Save with fn+S
+
+### Voice Memos
+- Record and save `.wav` voice memos to microSD
+- Browse, play back, and delete saved recordings
+- In-app playback volume control with top-bar indicator
+- Cleaner voice playback path with light filtering and normalization
+
+### IR Remote
+- Learn IR signals with an external receiver on `GPIO2`
+- Save learned remotes to internal flash
+- Replay saved signals with the built-in Cardputer IR transmitter on `GPIO44`
+- Supports longer raw captures for better real-device compatibility
 
 ### Game Boy Emulator *(untested)*
 - Runs Game Boy (.gb) and Game Boy Color (.gbc) ROMs from microSD card
@@ -45,6 +59,12 @@ A multi-app operating system for the **M5Stack Cardputer** (ESP32-S3), built wit
 - Browse files on microSD card or internal flash (LittleFS)
 - Tab to switch between SD and internal storage
 - Delete files with fn+D
+
+### Placeholder Apps
+- GPS
+- LoRa
+- Photos
+- HID Keyboard
 
 ### Settings
 - **WiFi Networks** — scan nearby access points, connect, and save up to 5 networks; reconnect to saved networks without retyping passwords; forget individual networks
@@ -62,6 +82,8 @@ A multi-app operating system for the **M5Stack Cardputer** (ESP32-S3), built wit
 | MP3 Player | `.mp3` | microSD card root |
 | Game Boy Emulator | `.gb`, `.gbc` | microSD card root |
 | Notes | `.txt` | Internal flash (`/notes/`) |
+| Voice Memos | `.wav` | microSD card (`/voice/`) |
+| IR Remote | JSON + raw timings (auto-managed) | Internal flash |
 | SSH Profiles | JSON (auto-managed) | Internal flash |
 
 ---
@@ -99,15 +121,30 @@ A multi-app operating system for the **M5Stack Cardputer** (ESP32-S3), built wit
 | fn + ; / . | Previous / Next track |
 | + / − | Volume up / down |
 
+### Voice Memos
+| Key | Action |
+|-----|--------|
+| Enter | Open / play / stop / save |
+| - / = | Playback volume down / up |
+| fn + D | Delete selected memo |
+
+### IR Remote
+| Key | Action |
+|-----|--------|
+| Enter | Send selected saved code |
+| Tab | Learn new IR code |
+| fn + D | Delete selected code |
+| fn + T | Send built-in NEC test frame |
+
 ---
 
 ## Flashing the Firmware
 
 ### Option A — Pre-built binary (easiest)
-Download `cardputer-os-v1.1-merged.bin` from the [Releases](../../releases) page and flash with [esptool](https://github.com/espressif/esptool):
+Download `cardputer-os-v1.3-merged.bin` from the [Releases](../../releases) page and flash with [esptool](https://github.com/espressif/esptool):
 
 ```bash
-esptool.py --chip esp32s3 --port (COM) write_flash 0x0 cardputer-os-v1.1-merged.bin
+esptool.py --chip esp32s3 --port (COM) write_flash 0x0 cardputer-os-v1.3-merged.bin
 ```
 
 Replace `COM3` with your actual port (`/dev/ttyUSB0` on Linux/Mac).
@@ -128,6 +165,26 @@ pio run --target upload
 - **M5Stack Cardputer** (ESP32-S3FN8)
 - microSD card (FAT32) — required for MP3 and Game Boy apps
 - WiFi network — required for SSH
+- External IR receiver module on `GPIO2` — optional, required only for IR learning
+
+---
+
+## Release Notes
+
+### v1.3
+- Added a multi-page launcher with page wrap navigation and room for future apps
+- Added a working IR Remote app with learn, save, delete, and resend support
+- Added a working Voice Memos app with record, save, playback, delete, and in-app volume control
+- Improved battery reporting for Cardputer power hardware
+- Improved SSH receive handling for bursty command output
+
+### Planned / Future Ideas
+- GPS app
+- LoRa app
+- Photos app
+- HID Keyboard app
+- TV-B-Gone style IR utility
+- Optional USB HID keyboard mode
 
 ---
 

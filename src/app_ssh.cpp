@@ -270,24 +270,19 @@ static void handleSshConnecting() {
 
 static void handleTerminal() {
     char rxBuf[SSH_RECV_BUF + 1];
-    int n = SSH.receive(rxBuf, sizeof(rxBuf));
-    if (n < 0) {
-        SSH.disconnect();
-        passMode = false;
-        term.println("\r\n\n[Connection closed]");
-        term.println("Press any key.");
-        while (true) {
-            auto ev = readKeys();
-            if (ev.changed) { setSshState(SshState::PROFILE_LIST); return; }
-            delay(50);
+    bool connectionClosed = false;
+    while (true) {
+        int n = SSH.receive(rxBuf, sizeof(rxBuf) - 1);
+        if (n < 0) {
+            connectionClosed = true;
+            break;
         }
-    }
-    if (n > 0) {
+        if (n == 0) break;
+
         // Auto-detect password prompts → switch to star-echo mode
-        if (!passMode) {
+        if (!passMode && n >= 7) {
             rxBuf[n] = '\0';
-            char* p = rxBuf;
-            for (char* c = p; c < p + n - 7; c++) {
+            for (char* c = rxBuf; c <= rxBuf + n - 7; c++) {
                 // Match "assword" (catches "Password:", "password:", "passphrase:")
                 if ((c[0]=='a'||c[0]=='A') && (c[1]=='s'||c[1]=='S') &&
                     (c[2]=='s'||c[2]=='S') && (c[3]=='w'||c[3]=='W') &&
@@ -300,6 +295,17 @@ static void handleTerminal() {
             }
         }
         term.write(rxBuf, n);
+    }
+    if (connectionClosed) {
+        SSH.disconnect();
+        passMode = false;
+        term.println("\r\n\n[Connection closed]");
+        term.println("Press any key.");
+        while (true) {
+            auto ev = readKeys();
+            if (ev.changed) { setSshState(SshState::PROFILE_LIST); return; }
+            delay(50);
+        }
     }
 
     auto ev = readKeys();
