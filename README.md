@@ -14,6 +14,8 @@ CardputerOS is a multi-app firmware for the **M5Stack Cardputer** built with Pla
 - USB HID Keyboard mode over USB-C
 - USB Storage mode for sharing the microSD card over USB-C
 - Timer with presets, manual keypad entry, and Stopwatch mode
+- GPS status, tracker, and wardriving tools for the LoRa/GNSS cap
+- Basic LoRa raw-text chat for the LoRa/GNSS cap
 - File Manager for SD and internal flash
 - Game Boy emulator support
 
@@ -36,8 +38,8 @@ CardputerOS is a multi-app firmware for the **M5Stack Cardputer** built with Pla
 - Timer
 
 ### Page 3
-- GPS *(coming soon)*
-- LoRa *(coming soon)*
+- GPS
+- LoRa
 
 ## Supported Files
 
@@ -48,6 +50,8 @@ CardputerOS is a multi-app firmware for the **M5Stack Cardputer** built with Pla
 | Game Boy | `.gb`, `.gbc` | microSD root |
 | Voice Memos | `.wav` | microSD `/voice/` |
 | Notes | `.txt` | internal flash `/notes/` |
+| GPS Tracker | `.gpx` | microSD `/gps/` |
+| Wardriving | `.csv` | microSD `/gps/` |
 
 ## Quick Controls
 
@@ -77,14 +81,25 @@ CardputerOS is a multi-app firmware for the **M5Stack Cardputer** built with Pla
 - `Del`: reset / clear
 - Number keys: manual timer entry in `mmss`
 
+### GPS
+- `Enter`: open selected GPS mode / return to menu
+- `Tracker`: `Enter` start/stop, `Del` reset
+- `Wardriving`: `Enter` start/stop, `Del` reset
+
+### LoRa
+- Type text on the keyboard
+- `Enter`: send current message
+- `Del`: backspace input
+- `fn + D`: clear message log
+
 ## Flashing
 
 ### Prebuilt
 
-Download `cardputer-os-v1.5-merged.bin` from the [Releases](../../releases) page and flash:
+Download `cardputer-os-v1.6-merged.bin` from the [Releases](../../releases) page and flash:
 
 ```bash
-esptool.py --chip esp32s3 --port COM3 write_flash 0x0 cardputer-os-v1.5-merged.bin
+esptool.py --chip esp32s3 --port COM3 write_flash 0x0 cardputer-os-v1.6-merged.bin
 ```
 
 ### Build From Source
@@ -101,6 +116,7 @@ pio run --target upload
 - **microSD:** required for MP3, Photos, Voice Memos, and Game Boy
 - **WiFi:** required for SSH
 - **External IR receiver:** optional, only needed for learning new IR codes
+- **LoRa/GNSS Cap:** required for the GPS and LoRa apps
 
 ### IR Receiver Wiring
 
@@ -114,6 +130,13 @@ Tested module wiring:
 - red -> `VCC`
 - white -> `OUT`
 
+## v1.6
+
+- Added a working GPS app with `Status`, `Tracker`, and `Wardriving` modes
+- Added GPX track logging and CSV wardriving logs to `/gps` on the SD card
+- Added a working first-pass LoRa raw-text chat app for the LoRa/GNSS cap
+- Promoted GPS and LoRa from placeholders to real app functionality
+
 ## v1.5
 
 - Added working USB Storage over USB-C
@@ -123,8 +146,6 @@ Tested module wiring:
 
 ## Future Ideas
 
-- GPS app
-- LoRa app
 - ESP-NOW text messaging
 - TV-B-Gone style IR utility
 

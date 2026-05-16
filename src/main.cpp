@@ -21,13 +21,15 @@
 #include "app_hid_keyboard.h"
 #include "app_usb_storage.h"
 #include "app_timer.h"
+#include "app_gps.h"
+#include "app_lora.h"
 
 Terminal term;
 
 // ── App state ──────────────────────────────────────────────────────────────
 enum class State {
     BOOT,
-    LAUNCHER, APP_SSH, APP_MP3, APP_NOTES, APP_SETTINGS, APP_GAMES, APP_FILES, APP_IR_REMOTE, APP_PHOTOS, APP_VOICE_MEMOS, APP_HID_KEYBOARD, APP_USB_STORAGE, APP_TIMER, APP_PLACEHOLDER
+    LAUNCHER, APP_SSH, APP_MP3, APP_NOTES, APP_SETTINGS, APP_GAMES, APP_FILES, APP_IR_REMOTE, APP_PHOTOS, APP_VOICE_MEMOS, APP_HID_KEYBOARD, APP_USB_STORAGE, APP_TIMER, APP_GPS, APP_LORA, APP_PLACEHOLDER
 };
 
 static State state = State::BOOT;
@@ -96,12 +98,12 @@ void launchApp(AppScene scene) {
             state = State::APP_TIMER;
             break;
         case AppScene::GPS:
-            appPlaceholderEnter("GPS");
-            state = State::APP_PLACEHOLDER;
+            appGpsEnter();
+            state = State::APP_GPS;
             break;
         case AppScene::LORA:
-            appPlaceholderEnter("LoRa");
-            state = State::APP_PLACEHOLDER;
+            appLoraEnter();
+            state = State::APP_LORA;
             break;
     }
 }
@@ -160,7 +162,7 @@ void handleBoot() {
         // Version / tagline
         d.setTextSize(1);
         d.setTextColor(C_DIM, C_BG);
-        const char* ver = "v1.5  --  M5Stack Cardputer";
+        const char* ver = "v1.6  --  M5Stack Cardputer";
         int vw = strlen(ver) * FONT_W;
         d.setCursor((SCREEN_W - vw) / 2, 56);
         d.print(ver);
@@ -222,6 +224,8 @@ void loop() {
         case State::APP_HID_KEYBOARD: appHidKeyboardLoop(); break;
         case State::APP_USB_STORAGE: appUsbStorageLoop(); break;
         case State::APP_TIMER: appTimerLoop(); break;
+        case State::APP_GPS: appGpsLoop(); break;
+        case State::APP_LORA: appLoraLoop(); break;
         case State::APP_PLACEHOLDER: appPlaceholderLoop(); break;
     }
 }

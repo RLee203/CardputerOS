@@ -63,3 +63,13 @@ constexpr int SD_SCK_PIN  = 40;
 constexpr int SD_MISO_PIN = 39;
 constexpr int SD_MOSI_PIN = 14;
 constexpr int SD_CS_PIN   = 12;
+
+// ── GPS / LoRa Cap ────────────────────────────────────────────────────────
+constexpr int GPS_TX_PIN      = 13;   // Cardputer G13 -> cap RX
+constexpr int GPS_RX_PIN      = 15;   // Cardputer G15 <- cap TX
+constexpr uint32_t GPS_BAUD   = 115200;
+constexpr const char* GPS_DIR = "/gps";
+constexpr int LORA_NSS_PIN    = 5;
+constexpr int LORA_RST_PIN    = 3;
+constexpr int LORA_BUSY_PIN   = 6;
+constexpr int LORA_DIO1_PIN   = 4;
