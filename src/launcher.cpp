@@ -243,8 +243,7 @@ static void drawCell(int row, int col) {
     auto& d = M5Cardputer.Display;
 
     if (idx >= APP_COUNT) {
-        d.fillRoundRect(cx0, cy0, cw, ch, 6, 0x1E1E1E);
-        d.drawRoundRect(cx0, cy0, cw, ch, 6, 0x333333);
+        d.fillRect(cx0, cy0, cw, ch, LBKG);
         return;
     }
 

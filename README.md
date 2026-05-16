@@ -1,183 +1,93 @@
 # CardputerOS
 
-A multi-app operating system for the **M5Stack Cardputer** (ESP32-S3), built with PlatformIO and the Arduino framework.
+CardputerOS is a multi-app firmware for the **M5Stack Cardputer** built with PlatformIO and Arduino.
 
-> **Early Development Notice**
-> This project is in early development stages. Bugs are expected and features may change between releases. Please report issues on the GitHub Issues page.
+## Highlights
 
----
+- Multi-page launcher with page wrap navigation
+- SSH terminal over WiFi
+- MP3 player from microSD
+- Notes on internal flash
+- Voice Memos with record, playback, delete, and volume control
+- IR Remote with learn, save, delete, and resend
+- Photos viewer for microSD images
+- USB HID Keyboard mode over USB-C
+- USB Storage mode for sharing the microSD card over USB-C
+- Timer with presets, manual keypad entry, and Stopwatch mode
+- File Manager for SD and internal flash
+- Game Boy emulator support
 
-## Features
+## Current App Pages
 
-### Launcher
-- Icon-based home screen with multiple 3×2 pages
-- Quick-launch by hotkey across launcher pages
-- `Tab` page switching plus left/right page wrap navigation
-- Page 2 now includes media/tools apps, and page 3 holds future hardware apps
-- Live WiFi status and battery indicator in the status bar
+### Page 1
+- SSH
+- MP3
+- Notes
+- Games
+- Settings
+- Files
 
-### SSH Terminal
-- Full SSH client using libssh over WiFi
-- Scrollable terminal with 40-column × 15-row display
-- Saved connection profiles (host, port, username, password)
-- Ctrl+C / Ctrl+D / Ctrl+Z via fn+C / fn+D / fn+Z
-- Command history navigation, Tab completion passthrough
-- Cursor-position editing in the input line
-- Improved burst-output handling to reduce reboots on noisy Git commands
-
-### MP3 Player
-- Plays MP3 files from a microSD card
-- Browse and select tracks from a file list
-- Play / Pause, Previous / Next track controls
-- Volume up / down
-
-### Notes
-- Create, edit, and delete plain-text notes stored on internal flash (LittleFS)
-- Full text editor with cursor movement and scrolling
-- Save with fn+S
-
-### Voice Memos
-- Record and save `.wav` voice memos to microSD
-- Browse, play back, and delete saved recordings
-- In-app playback volume control with top-bar indicator
-- Cleaner voice playback path with light filtering and normalization
-
-### IR Remote
-- Learn IR signals with an external receiver on `GPIO2`
-- Save learned remotes to internal flash
-- Replay saved signals with the built-in Cardputer IR transmitter on `GPIO44`
-- Supports longer raw captures for better real-device compatibility
-
-### Photos
-- Browse supported image files from the microSD card root
-- Open photos full-screen on the Cardputer display
-- Left / right photo navigation in the viewer
-- Supports `.jpg`, `.jpeg`, `.png`, and `.bmp`
-
-### HID Keyboard
-- USB-C keyboard mode over the Cardputer's built-in USB device interface
-- Explicit on-device enable flow for safer use
-- Sends typed keys plus `Tab`, `Enter`, `Backspace`, and arrow keys to the host
-- Clean status-card UI while active
-
-### Game Boy Emulator 
-- Runs Game Boy (.gb) and Game Boy Color (.gbc) ROMs from microSD card
-- Powered by the [Peanut-GB](https://github.com/deltabeard/Peanut-GB) emulator core
-- Grayscale display, ~60 fps target
-- **Compatible files:** `.gb`, `.gbc`
-- Controls: WASD = D-Pad, `\` = A button, Space = B button, Enter = Start, Tab = Select
-  
-
-### File Manager
-- Browse files on microSD card or internal flash (LittleFS)
-- Tab to switch between SD and internal storage
-- Delete files with fn+D
-
-### Placeholder Apps
+### Page 2
+- IR Remote
+- Photos
+- Voice Memos
+- HID Keyboard
 - USB Storage
 - Timer
-- GPS
-- LoRa
 
-### Settings
-- **WiFi Networks** — scan nearby access points, connect, and save up to 5 networks; reconnect to saved networks without retyping passwords; forget individual networks
-- **Brightness** — adjust screen brightness with fn+, / fn+/
-- **Text Color** — cycle through 4 color themes (Green, White, Cyan, Amber)
-- **Key Reference** — built-in controls cheatsheet
-- **About** — version and current IP address
+### Page 3
+- GPS *(coming soon)*
+- LoRa *(coming soon)*
 
----
-
-## Compatible File Formats
+## Supported Files
 
 | App | Format | Location |
 |-----|--------|----------|
-| MP3 Player | `.mp3` | microSD card root |
-| Game Boy Emulator | `.gb`, `.gbc` | microSD card root |
-| Notes | `.txt` | Internal flash (`/notes/`) |
-| Voice Memos | `.wav` | microSD card (`/voice/`) |
-| Photos | `.jpg`, `.jpeg`, `.png`, `.bmp` | microSD card root |
-| IR Remote | JSON + raw timings (auto-managed) | Internal flash |
-| SSH Profiles | JSON (auto-managed) | Internal flash |
+| MP3 | `.mp3` | microSD root |
+| Photos | `.jpg`, `.jpeg`, `.png`, `.bmp` | microSD root |
+| Game Boy | `.gb`, `.gbc` | microSD root |
+| Voice Memos | `.wav` | microSD `/voice/` |
+| Notes | `.txt` | internal flash `/notes/` |
 
----
+## Quick Controls
 
-## Controls Reference
-
-| Key | Action |
-|-----|--------|
-| fn + backspace | Back / Home |
-| fn + Q | Home (backup) |
-| fn + ; | Up / History up |
-| fn + . | Down / History down |
-| fn + , | Left / Brightness − / Theme prev |
-| fn + / | Right / Brightness + / Theme next |
-
-### SSH Terminal
-| Key | Action |
-|-----|--------|
-| fn + C / D / Z | Ctrl+C / Ctrl+D / Ctrl+Z |
-| Tab | Tab complete |
-
-### Game Boy
-| Key | Action |
-|-----|--------|
-| W A S D | D-Pad |
-| `\` | A button |
-| Space | B button |
-| Enter | Start |
-| Tab | Select |
-
-### MP3 Player
-| Key | Action |
-|-----|--------|
-| Enter | Play / Pause |
-| fn + ; / . | Previous / Next track |
-| + / − | Volume up / down |
-
-### Voice Memos
-| Key | Action |
-|-----|--------|
-| Enter | Open / play / stop / save |
-| - / = | Playback volume down / up |
-| fn + D | Delete selected memo |
+- `fn + backspace`: back / home
+- `Tab`: switch pages or app mode where supported
+- `Enter`: select / start / pause in most apps
+- `Del`: reset or delete where supported
 
 ### IR Remote
-| Key | Action |
-|-----|--------|
-| Enter | Send selected saved code |
-| Tab | Learn new IR code |
-| fn + D | Delete selected code |
-| fn + T | Send built-in NEC test frame |
+- `Tab`: learn new IR code
+- `Enter`: send selected code
+- `fn + D`: delete selected code
+- `fn + T`: send test NEC frame
 
-### Photos
-| Key | Action |
-|-----|--------|
-| Enter | Open photo / return to list |
-| Left / Right | Previous / next photo |
+### Voice Memos
+- `Enter`: open / play / stop / save
+- `-` / `=`: playback volume down / up
+- `fn + D`: delete selected memo
 
-### HID Keyboard
-| Key | Action |
-|-----|--------|
-| Enter | Enable USB keyboard mode |
-| fn + backspace | Exit and disable keyboard mode |
-| Tab / Enter / Del / Arrows | Sent to host while active |
+### USB Storage
+- `Enter`: toggle SD sharing over USB-C
+- `fn + backspace`: exit and remount SD
 
----
+### Timer
+- `Tab`: switch Timer / Stopwatch
+- `Enter`: start / pause / resume
+- `Del`: reset / clear
+- Number keys: manual timer entry in `mmss`
 
-## Flashing the Firmware
+## Flashing
 
-### Option A — Pre-built binary (easiest)
-Download `cardputer-os-v1.4-merged.bin` from the [Releases](../../releases) page and flash with [esptool](https://github.com/espressif/esptool):
+### Prebuilt
+
+Download `cardputer-os-v1.5-merged.bin` from the [Releases](../../releases) page and flash:
 
 ```bash
-esptool.py --chip esp32s3 --port (COM) write_flash 0x0 cardputer-os-v1.4-merged.bin
+esptool.py --chip esp32s3 --port COM3 write_flash 0x0 cardputer-os-v1.5-merged.bin
 ```
 
-Replace `COM3` with your actual port (`/dev/ttyUSB0` on Linux/Mac).
-
-### Option B — Build from source
-Requires [PlatformIO](https://platformio.org/).
+### Build From Source
 
 ```bash
 git clone https://github.com/RLee203/CardputerOS.git
@@ -185,71 +95,43 @@ cd CardputerOS
 pio run --target upload
 ```
 
----
+## Hardware Notes
 
-## Hardware Requirements
+- **Device:** M5Stack Cardputer
+- **microSD:** required for MP3, Photos, Voice Memos, and Game Boy
+- **WiFi:** required for SSH
+- **External IR receiver:** optional, only needed for learning new IR codes
 
-- **M5Stack Cardputer** (ESP32-S3FN8)
-- microSD card (FAT32) — required for MP3 and Game Boy apps
-- WiFi network — required for SSH
-- External IR receiver module on `GPIO2` — optional, required only for IR learning
-
----
-
-## IR Receiver Wiring
-
-For IR learning in the `IR Remote` app, connect a 3-pin IR receiver module to the Cardputer Port A / Grove-style header:
+### IR Receiver Wiring
 
 - Cardputer `G` -> receiver `GND`
 - Cardputer `5V` -> receiver `VCC`
 - Cardputer `G2` / `GPIO2` -> receiver `OUT`
 
-For the receiver module used during testing:
+Tested module wiring:
 
-- black wire -> `GND`
-- red wire -> `VCC`
-- white wire -> `OUT`
+- black -> `GND`
+- red -> `VCC`
+- white -> `OUT`
 
-The built-in Cardputer IR transmitter handles sending saved codes. The external receiver is only needed when learning new signals.
+## v1.5
 
----
+- Added working USB Storage over USB-C
+- Added working Timer and Stopwatch
+- Hid unused launcher slots on partial pages
+- Kept the working IR Remote, Photos, Voice Memos, and HID Keyboard feature set
 
-## Release Notes
+## Future Ideas
 
-### v1.4
-- Added a working Photos app for SD card image viewing
-- Added a working USB HID Keyboard app over USB-C
-- Expanded the launcher to three pages and reorganized hardware/tool apps
-- Added placeholder entries for USB Storage and Timer
-- Kept IR Remote and Voice Memos improvements from v1.3
-
-### v1.3
-- Added a multi-page launcher with page wrap navigation and room for future apps
-- Added a working IR Remote app with learn, save, delete, and resend support
-- Added a working Voice Memos app with record, save, playback, delete, and in-app volume control
-- Improved battery reporting for Cardputer power hardware
-- Improved SSH receive handling for bursty command output
-
-### Planned / Future Ideas
-- USB Storage app
-- Timer app
 - GPS app
 - LoRa app
+- ESP-NOW text messaging
 - TV-B-Gone style IR utility
 
----
+## Credits
 
-## Libraries Used
-
-| Library | Purpose |
-|---------|---------|
-| M5Cardputer | Hardware HAL (display, keyboard, power) |
-| LibSSH-ESP32 | SSH client |
-| ESP32-audioI2S | MP3 audio decoding and I2S output |
-| Peanut-GB | Game Boy emulator core |
-| ArduinoJson | JSON config persistence |
-
----
+- [Launcher](https://github.com/bmorcelli/Launcher) helped inspire the USB storage app flow and status presentation
+- [Bruce Firmware](https://github.com/pr3y/Bruce) helped inform parts of the IR learn/save/replay direction
 
 ## License
 

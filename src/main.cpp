@@ -19,13 +19,15 @@
 #include "app_voice_memos.h"
 #include "app_placeholder.h"
 #include "app_hid_keyboard.h"
+#include "app_usb_storage.h"
+#include "app_timer.h"
 
 Terminal term;
 
 // ── App state ──────────────────────────────────────────────────────────────
 enum class State {
     BOOT,
-    LAUNCHER, APP_SSH, APP_MP3, APP_NOTES, APP_SETTINGS, APP_GAMES, APP_FILES, APP_IR_REMOTE, APP_PHOTOS, APP_VOICE_MEMOS, APP_HID_KEYBOARD, APP_PLACEHOLDER
+    LAUNCHER, APP_SSH, APP_MP3, APP_NOTES, APP_SETTINGS, APP_GAMES, APP_FILES, APP_IR_REMOTE, APP_PHOTOS, APP_VOICE_MEMOS, APP_HID_KEYBOARD, APP_USB_STORAGE, APP_TIMER, APP_PLACEHOLDER
 };
 
 static State state = State::BOOT;
@@ -86,12 +88,12 @@ void launchApp(AppScene scene) {
             state = State::APP_HID_KEYBOARD;
             break;
         case AppScene::USB_STORAGE:
-            appPlaceholderEnter("USB Storage");
-            state = State::APP_PLACEHOLDER;
+            appUsbStorageEnter();
+            state = State::APP_USB_STORAGE;
             break;
         case AppScene::TIMER:
-            appPlaceholderEnter("Timer");
-            state = State::APP_PLACEHOLDER;
+            appTimerEnter();
+            state = State::APP_TIMER;
             break;
         case AppScene::GPS:
             appPlaceholderEnter("GPS");
@@ -158,7 +160,7 @@ void handleBoot() {
         // Version / tagline
         d.setTextSize(1);
         d.setTextColor(C_DIM, C_BG);
-        const char* ver = "v1.4  --  M5Stack Cardputer";
+        const char* ver = "v1.5  --  M5Stack Cardputer";
         int vw = strlen(ver) * FONT_W;
         d.setCursor((SCREEN_W - vw) / 2, 56);
         d.print(ver);
@@ -218,6 +220,8 @@ void loop() {
         case State::APP_PHOTOS: appPhotosLoop(); break;
         case State::APP_VOICE_MEMOS: appVoiceMemosLoop(); break;
         case State::APP_HID_KEYBOARD: appHidKeyboardLoop(); break;
+        case State::APP_USB_STORAGE: appUsbStorageLoop(); break;
+        case State::APP_TIMER: appTimerLoop(); break;
         case State::APP_PLACEHOLDER: appPlaceholderLoop(); break;
     }
 }
