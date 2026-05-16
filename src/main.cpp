@@ -15,15 +15,17 @@
 #include "app_games.h"
 #include "app_files.h"
 #include "app_ir_remote.h"
+#include "app_photos.h"
 #include "app_voice_memos.h"
 #include "app_placeholder.h"
+#include "app_hid_keyboard.h"
 
 Terminal term;
 
 // ── App state ──────────────────────────────────────────────────────────────
 enum class State {
     BOOT,
-    LAUNCHER, APP_SSH, APP_MP3, APP_NOTES, APP_SETTINGS, APP_GAMES, APP_FILES, APP_IR_REMOTE, APP_VOICE_MEMOS, APP_PLACEHOLDER
+    LAUNCHER, APP_SSH, APP_MP3, APP_NOTES, APP_SETTINGS, APP_GAMES, APP_FILES, APP_IR_REMOTE, APP_PHOTOS, APP_VOICE_MEMOS, APP_HID_KEYBOARD, APP_PLACEHOLDER
 };
 
 static State state = State::BOOT;
@@ -67,28 +69,36 @@ void launchApp(AppScene scene) {
             appFilesEnter();
             state = State::APP_FILES;
             break;
-        case AppScene::GPS:
-            appPlaceholderEnter("GPS");
-            state = State::APP_PLACEHOLDER;
-            break;
-        case AppScene::LORA:
-            appPlaceholderEnter("LoRa");
-            state = State::APP_PLACEHOLDER;
-            break;
         case AppScene::IR_REMOTE:
             appIrRemoteEnter();
             state = State::APP_IR_REMOTE;
             break;
         case AppScene::PHOTOS:
-            appPlaceholderEnter("Photos");
-            state = State::APP_PLACEHOLDER;
+            appPhotosEnter();
+            state = State::APP_PHOTOS;
             break;
         case AppScene::VOICE_MEMOS:
             appVoiceMemosEnter();
             state = State::APP_VOICE_MEMOS;
             break;
         case AppScene::HID_KEYBOARD:
-            appPlaceholderEnter("HID Keyboard");
+            appHidKeyboardEnter();
+            state = State::APP_HID_KEYBOARD;
+            break;
+        case AppScene::USB_STORAGE:
+            appPlaceholderEnter("USB Storage");
+            state = State::APP_PLACEHOLDER;
+            break;
+        case AppScene::TIMER:
+            appPlaceholderEnter("Timer");
+            state = State::APP_PLACEHOLDER;
+            break;
+        case AppScene::GPS:
+            appPlaceholderEnter("GPS");
+            state = State::APP_PLACEHOLDER;
+            break;
+        case AppScene::LORA:
+            appPlaceholderEnter("LoRa");
             state = State::APP_PLACEHOLDER;
             break;
     }
@@ -148,7 +158,7 @@ void handleBoot() {
         // Version / tagline
         d.setTextSize(1);
         d.setTextColor(C_DIM, C_BG);
-        const char* ver = "v1.3  --  M5Stack Cardputer";
+        const char* ver = "v1.4  --  M5Stack Cardputer";
         int vw = strlen(ver) * FONT_W;
         d.setCursor((SCREEN_W - vw) / 2, 56);
         d.print(ver);
@@ -205,7 +215,9 @@ void loop() {
         case State::APP_GAMES:    appGamesLoop();      break;
         case State::APP_FILES:    appFilesLoop();      break;
         case State::APP_IR_REMOTE: appIrRemoteLoop();  break;
+        case State::APP_PHOTOS: appPhotosLoop(); break;
         case State::APP_VOICE_MEMOS: appVoiceMemosLoop(); break;
+        case State::APP_HID_KEYBOARD: appHidKeyboardLoop(); break;
         case State::APP_PLACEHOLDER: appPlaceholderLoop(); break;
     }
 }

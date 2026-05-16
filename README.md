@@ -13,6 +13,7 @@ A multi-app operating system for the **M5Stack Cardputer** (ESP32-S3), built wit
 - Icon-based home screen with multiple 3×2 pages
 - Quick-launch by hotkey across launcher pages
 - `Tab` page switching plus left/right page wrap navigation
+- Page 2 now includes media/tools apps, and page 3 holds future hardware apps
 - Live WiFi status and battery indicator in the status bar
 
 ### SSH Terminal
@@ -47,6 +48,18 @@ A multi-app operating system for the **M5Stack Cardputer** (ESP32-S3), built wit
 - Replay saved signals with the built-in Cardputer IR transmitter on `GPIO44`
 - Supports longer raw captures for better real-device compatibility
 
+### Photos
+- Browse supported image files from the microSD card root
+- Open photos full-screen on the Cardputer display
+- Left / right photo navigation in the viewer
+- Supports `.jpg`, `.jpeg`, `.png`, and `.bmp`
+
+### HID Keyboard
+- USB-C keyboard mode over the Cardputer's built-in USB device interface
+- Explicit on-device enable flow for safer use
+- Sends typed keys plus `Tab`, `Enter`, `Backspace`, and arrow keys to the host
+- Clean status-card UI while active
+
 ### Game Boy Emulator *(untested)*
 - Runs Game Boy (.gb) and Game Boy Color (.gbc) ROMs from microSD card
 - Powered by the [Peanut-GB](https://github.com/deltabeard/Peanut-GB) emulator core
@@ -61,10 +74,10 @@ A multi-app operating system for the **M5Stack Cardputer** (ESP32-S3), built wit
 - Delete files with fn+D
 
 ### Placeholder Apps
+- USB Storage
+- Timer
 - GPS
 - LoRa
-- Photos
-- HID Keyboard
 
 ### Settings
 - **WiFi Networks** — scan nearby access points, connect, and save up to 5 networks; reconnect to saved networks without retyping passwords; forget individual networks
@@ -83,6 +96,7 @@ A multi-app operating system for the **M5Stack Cardputer** (ESP32-S3), built wit
 | Game Boy Emulator | `.gb`, `.gbc` | microSD card root |
 | Notes | `.txt` | Internal flash (`/notes/`) |
 | Voice Memos | `.wav` | microSD card (`/voice/`) |
+| Photos | `.jpg`, `.jpeg`, `.png`, `.bmp` | microSD card root |
 | IR Remote | JSON + raw timings (auto-managed) | Internal flash |
 | SSH Profiles | JSON (auto-managed) | Internal flash |
 
@@ -136,15 +150,28 @@ A multi-app operating system for the **M5Stack Cardputer** (ESP32-S3), built wit
 | fn + D | Delete selected code |
 | fn + T | Send built-in NEC test frame |
 
+### Photos
+| Key | Action |
+|-----|--------|
+| Enter | Open photo / return to list |
+| Left / Right | Previous / next photo |
+
+### HID Keyboard
+| Key | Action |
+|-----|--------|
+| Enter | Enable USB keyboard mode |
+| fn + backspace | Exit and disable keyboard mode |
+| Tab / Enter / Del / Arrows | Sent to host while active |
+
 ---
 
 ## Flashing the Firmware
 
 ### Option A — Pre-built binary (easiest)
-Download `cardputer-os-v1.3-merged.bin` from the [Releases](../../releases) page and flash with [esptool](https://github.com/espressif/esptool):
+Download `cardputer-os-v1.4-merged.bin` from the [Releases](../../releases) page and flash with [esptool](https://github.com/espressif/esptool):
 
 ```bash
-esptool.py --chip esp32s3 --port (COM) write_flash 0x0 cardputer-os-v1.3-merged.bin
+esptool.py --chip esp32s3 --port (COM) write_flash 0x0 cardputer-os-v1.4-merged.bin
 ```
 
 Replace `COM3` with your actual port (`/dev/ttyUSB0` on Linux/Mac).
@@ -189,6 +216,13 @@ The built-in Cardputer IR transmitter handles sending saved codes. The external 
 
 ## Release Notes
 
+### v1.4
+- Added a working Photos app for SD card image viewing
+- Added a working USB HID Keyboard app over USB-C
+- Expanded the launcher to three pages and reorganized hardware/tool apps
+- Added placeholder entries for USB Storage and Timer
+- Kept IR Remote and Voice Memos improvements from v1.3
+
 ### v1.3
 - Added a multi-page launcher with page wrap navigation and room for future apps
 - Added a working IR Remote app with learn, save, delete, and resend support
@@ -197,12 +231,11 @@ The built-in Cardputer IR transmitter handles sending saved codes. The external 
 - Improved SSH receive handling for bursty command output
 
 ### Planned / Future Ideas
+- USB Storage app
+- Timer app
 - GPS app
 - LoRa app
-- Photos app
-- HID Keyboard app
 - TV-B-Gone style IR utility
-- Optional USB HID keyboard mode
 
 ---
 

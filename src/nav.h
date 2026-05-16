@@ -4,7 +4,7 @@
 #include <utility/power/IP5306_Class.hpp>
 #include "config.h"
 
-enum class AppScene { SSH, MP3, NOTES, SETTINGS, GAMES, FILES, GPS, LORA, IR_REMOTE, PHOTOS, VOICE_MEMOS, HID_KEYBOARD };
+enum class AppScene { SSH, MP3, NOTES, SETTINGS, GAMES, FILES, IR_REMOTE, PHOTOS, VOICE_MEMOS, HID_KEYBOARD, USB_STORAGE, TIMER, GPS, LORA };
 
 void goHome();
 void launchApp(AppScene scene);

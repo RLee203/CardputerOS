@@ -218,7 +218,7 @@ static void drawMenu() {
                 }
                 break;
             case 5:
-                d.print("About: Cardputer OS v1.3");
+                d.print("About: Cardputer OS v1.4");
                 if (sel) {
                     snprintf(buf, sizeof(buf), "IP: %s", WifiMgr.localIP().c_str());
                     d.setTextColor(C_DIM, bg);

@@ -32,12 +32,14 @@ static const AppEntry APPS[] = {
     { "Games", 'g', AppScene::GAMES, 0xCC2200 },
     { "Settings", 'p', AppScene::SETTINGS, 0x5522AA },
     { "Files", 'f', AppScene::FILES, 0x226677 },
-    { "GPS", 'x', AppScene::GPS, 0x005E7A },
-    { "LoRa", 'l', AppScene::LORA, 0x7A3E00 },
     { "IR Remote", 'r', AppScene::IR_REMOTE, 0x7A002E },
     { "Photos", 'h', AppScene::PHOTOS, 0x3A3A8C },
     { "VoiceMemo", 'v', AppScene::VOICE_MEMOS, 0x6A005A },
     { "HID Keybd", 'b', AppScene::HID_KEYBOARD, 0x0050A8 },
+    { "USB Store", 'u', AppScene::USB_STORAGE, 0x7A5A00 },
+    { "Timer", 't', AppScene::TIMER, 0x006C4D },
+    { "GPS", 'x', AppScene::GPS, 0x005E7A },
+    { "LoRa", 'l', AppScene::LORA, 0x7A3E00 },
 };
 static constexpr int APP_COUNT = (int)(sizeof(APPS) / sizeof(APPS[0]));
 
@@ -214,6 +216,24 @@ static void iKeyboard(int cx, int cy) {
     d.drawFastVLine(cx + 4, cy - 5, 11, 0xFFFFFF);
 }
 
+static void iUsb(int cx, int cy) {
+    auto& d = M5Cardputer.Display;
+    d.drawFastVLine(cx, cy - 10, 13, 0xFFFFFF);
+    d.drawLine(cx, cy - 10, cx - 4, cy - 5, 0xFFFFFF);
+    d.drawLine(cx, cy - 10, cx + 4, cy - 5, 0xFFFFFF);
+    d.drawFastHLine(cx - 8, cy + 2, 16, 0xFFFFFF);
+    d.drawFastVLine(cx - 8, cy + 2, 5, 0xFFFFFF);
+    d.drawFastVLine(cx + 8, cy + 2, 5, 0xFFFFFF);
+}
+
+static void iTimer(int cx, int cy) {
+    auto& d = M5Cardputer.Display;
+    d.drawCircle(cx, cy, 10, 0xFFFFFF);
+    d.drawFastVLine(cx, cy - 5, 6, 0xFFFFFF);
+    d.drawLine(cx, cy, cx + 5, cy + 3, 0xFFFFFF);
+    d.drawFastHLine(cx - 3, cy - 13, 6, 0xFFFFFF);
+}
+
 // ── Cell ───────────────────────────────────────────────────────────────────
 
 static void drawCell(int row, int col) {
@@ -250,12 +270,14 @@ static void drawCell(int row, int col) {
         case 3: iGames(icx, icy);        break;
         case 4: iSettings(icx, icy, tc); break;
         case 5: iFiles(icx, icy);        break;
-        case 6: iGPS(icx, icy);          break;
-        case 7: iLora(icx, icy);         break;
-        case 8: iRemote(icx, icy);       break;
-        case 9: iPhotos(icx, icy);       break;
-        case 10: iRecorder(icx, icy);    break;
-        case 11: iKeyboard(icx, icy);    break;
+        case 6: iRemote(icx, icy);       break;
+        case 7: iPhotos(icx, icy);       break;
+        case 8: iRecorder(icx, icy);     break;
+        case 9: iKeyboard(icx, icy);     break;
+        case 10: iUsb(icx, icy);         break;
+        case 11: iTimer(icx, icy);       break;
+        case 12: iGPS(icx, icy);         break;
+        case 13: iLora(icx, icy);        break;
     }
 
     // Label
