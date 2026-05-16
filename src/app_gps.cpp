@@ -194,17 +194,21 @@ void stopWardriving() {
 }
 
 void startWardriving() {
-    if (!SD.begin(SD_CS_PIN)) return;
-    if (!SD.exists(GPS_DIR)) SD.mkdir(GPS_DIR);
+    if (!SD.begin(SD_CS_PIN, SPI, 25000000)) return;
 
+    if (!SD.exists(GPS_DIR)) SD.mkdir(GPS_DIR);
     g_wardriveFile = wardriveFilename();
     File file = SD.open(g_wardriveFile, FILE_WRITE);
-    if (!file) return;
+    if (!file) { g_wardriveFile = ""; return; }
     file.println("time_utc,ssid,bssid,rssi,channel,encryption,latitude,longitude,altitude_m,satellites");
     file.close();
 
+    // Full WiFi radio reset before scanning.
+    WiFi.mode(WIFI_OFF);
+    delay(100);
     WiFi.mode(WIFI_STA);
-    WiFi.disconnect(false, true);
+    WiFi.disconnect();
+    delay(300);
 
     g_wardrivingRunning = true;
     g_lastWardriveScanMs = 0;
@@ -239,76 +243,55 @@ String encryptionName(wifi_auth_mode_t mode) {
 }
 
 void runWardrivingScan() {
-    if (!g_wardrivingRunning || !gps.location.isValid()) return;
+    if (!g_wardrivingRunning) return;
     uint32_t now = millis();
     if (now - g_lastWardriveScanMs < 5000) return;
     g_lastWardriveScanMs = now;
 
-    int found = WiFi.scanNetworks(false, true, false, 300, 0, nullptr, nullptr);
-    if (found <= 0) {
-        WiFi.scanDelete();
-        return;
-    }
+    // Synchronous scan — ~2 s blocking with 150 ms/chan across 13 channels.
+    // GPS hardware buffers NMEA sentences so we don't lose fixes during this.
+    int found = WiFi.scanNetworks(false, true, false, 150);
+    if (found <= 0) { WiFi.scanDelete(); markDirty(); return; }
 
-    if (!SD.begin(SD_CS_PIN)) {
-        WiFi.scanDelete();
-        return;
-    }
+    // Count networks found regardless of whether the SD write succeeds
+    g_wardriveNetworks += found;
 
     File file = SD.open(g_wardriveFile, FILE_APPEND);
-    if (!file) {
-        WiFi.scanDelete();
-        return;
+    if (file) {
+        String utc = "";
+        if (gps.date.isValid() && gps.time.isValid()) {
+            char buf[32];
+            snprintf(buf, sizeof(buf), "%04d-%02d-%02dT%02d:%02d:%02dZ",
+                gps.date.year(), gps.date.month(), gps.date.day(),
+                gps.time.hour(), gps.time.minute(), gps.time.second());
+            utc = buf;
+        }
+        bool hasLoc = gps.location.isValid();
+        for (int i = 0; i < found; ++i) {
+            file.print(csvEscape(utc));                                           file.print(',');
+            file.print(csvEscape(WiFi.SSID(i)));                                  file.print(',');
+            file.print(csvEscape(WiFi.BSSIDstr(i)));                              file.print(',');
+            file.print(WiFi.RSSI(i));                                             file.print(',');
+            file.print(WiFi.channel(i));                                          file.print(',');
+            file.print(csvEscape(encryptionName(WiFi.encryptionType(i))));        file.print(',');
+            if (hasLoc) {
+                file.print(String(gps.location.lat(), 6));
+                file.print(',');
+                file.print(String(gps.location.lng(), 6));
+            } else {
+                file.print(',');  // empty lat, empty lon when no fix
+            }
+            file.print(',');
+            file.print(gps.altitude.isValid() ? String(gps.altitude.meters(), 1) : "");
+            file.print(',');
+            file.println(gps.satellites.isValid() ? String(gps.satellites.value()) : "");
+            ++g_wardriveRows;
+        }
+        file.close();
     }
 
-    String utc = "";
-    if (gps.date.isValid() && gps.time.isValid()) {
-        char buf[32];
-        snprintf(
-            buf,
-            sizeof(buf),
-            "%04d-%02d-%02dT%02d:%02d:%02dZ",
-            gps.date.year(),
-            gps.date.month(),
-            gps.date.day(),
-            gps.time.hour(),
-            gps.time.minute(),
-            gps.time.second());
-        utc = buf;
-    }
-
-    for (int i = 0; i < found; ++i) {
-        String ssid = WiFi.SSID(i);
-        String bssid = WiFi.BSSIDstr(i);
-        int32_t rssi = WiFi.RSSI(i);
-        int32_t channel = WiFi.channel(i);
-        String enc = encryptionName(WiFi.encryptionType(i));
-
-        file.print(csvEscape(utc));
-        file.print(',');
-        file.print(csvEscape(ssid));
-        file.print(',');
-        file.print(csvEscape(bssid));
-        file.print(',');
-        file.print(rssi);
-        file.print(',');
-        file.print(channel);
-        file.print(',');
-        file.print(csvEscape(enc));
-        file.print(',');
-        file.print(String(gps.location.lat(), 6));
-        file.print(',');
-        file.print(String(gps.location.lng(), 6));
-        file.print(',');
-        file.print(gps.altitude.isValid() ? String(gps.altitude.meters(), 1) : "");
-        file.print(',');
-        file.println(gps.satellites.isValid() ? String(gps.satellites.value()) : "");
-        ++g_wardriveRows;
-    }
-
-    g_wardriveNetworks += found;
-    file.close();
     WiFi.scanDelete();
+    markDirty();
 }
 
 void logTrackerPoint() {

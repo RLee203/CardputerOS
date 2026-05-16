@@ -105,6 +105,10 @@ void launchApp(AppScene scene) {
             appLoraEnter();
             state = State::APP_LORA;
             break;
+        case AppScene::NFC:
+            appPlaceholderEnter("NFC");
+            state = State::APP_PLACEHOLDER;
+            break;
     }
 }
 
@@ -205,6 +209,9 @@ void setup() {
     M5Cardputer.Display.setRotation(1);
     M5Cardputer.Display.setFont(&fonts::Font0);
     M5Cardputer.Display.setTextSize(1);
+    // Deselect LoRa chip before SPI init — prevents MISO collision with SD card
+    pinMode(LORA_NSS_PIN, OUTPUT);
+    digitalWrite(LORA_NSS_PIN, HIGH);
     SPI.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, SD_CS_PIN);
 }
 

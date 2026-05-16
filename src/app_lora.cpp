@@ -91,7 +91,6 @@ void drawUi() {
 
 void ensureInit() {
     if (g_inited) return;
-    SPI.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, SD_CS_PIN);
     int state = g_lora.begin(868.0, 500.0, 7, 5, 0x34, 10, 10);
     g_initOk = (state == RADIOLIB_ERR_NONE);
     if (g_initOk) {

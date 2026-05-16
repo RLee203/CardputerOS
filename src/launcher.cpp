@@ -40,6 +40,7 @@ static const AppEntry APPS[] = {
     { "Timer", 't', AppScene::TIMER, 0x006C4D },
     { "GPS", 'x', AppScene::GPS, 0x005E7A },
     { "LoRa", 'l', AppScene::LORA, 0x7A3E00 },
+    { "NFC", 'c', AppScene::NFC, 0x006644 },
 };
 static constexpr int APP_COUNT = (int)(sizeof(APPS) / sizeof(APPS[0]));
 
@@ -226,6 +227,14 @@ static void iUsb(int cx, int cy) {
     d.drawFastVLine(cx + 8, cy + 2, 5, 0xFFFFFF);
 }
 
+static void iNfc(int cx, int cy) {
+    auto& d = M5Cardputer.Display;
+    // Three concentric arcs (NFC symbol)
+    d.drawArc(cx, cy + 4, 14, 12, 210, 330, 0xFFFFFF);
+    d.drawArc(cx, cy + 4,  9,  7, 210, 330, 0xFFFFFF);
+    d.drawArc(cx, cy + 4,  4,  2, 210, 330, 0xFFFFFF);
+}
+
 static void iTimer(int cx, int cy) {
     auto& d = M5Cardputer.Display;
     d.drawCircle(cx, cy, 10, 0xFFFFFF);
@@ -277,6 +286,7 @@ static void drawCell(int row, int col) {
         case 11: iTimer(icx, icy);       break;
         case 12: iGPS(icx, icy);         break;
         case 13: iLora(icx, icy);        break;
+        case 14: iNfc(icx, icy);         break;
     }
 
     // Label

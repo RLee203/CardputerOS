@@ -40,6 +40,7 @@ CardputerOS is a multi-app firmware for the **M5Stack Cardputer** built with Pla
 ### Page 3
 - GPS
 - LoRa
+- NFC (coming soon)
 
 ## Supported Files
 
@@ -96,10 +97,10 @@ CardputerOS is a multi-app firmware for the **M5Stack Cardputer** built with Pla
 
 ### Prebuilt
 
-Download `cardputer-os-v1.6-merged.bin` from the [Releases](../../releases) page and flash:
+Download `cardputer-os-v1.7-merged.bin` from the [Releases](../../releases) page and flash:
 
 ```bash
-esptool.py --chip esp32s3 --port COM3 write_flash 0x0 cardputer-os-v1.6-merged.bin
+esptool.py --chip esp32s3 --port COM3 write_flash 0x0 cardputer-os-v1.7-merged.bin
 ```
 
 ### Build From Source
@@ -129,6 +130,13 @@ Tested module wiring:
 - black -> `GND`
 - red -> `VCC`
 - white -> `OUT`
+
+## v1.7
+
+- Fixed SD card failing to mount when the LoRa/GNSS cap is attached — LoRa chip CS pin is now forced HIGH at boot so it does not collide with the SD card on the shared SPI bus
+- Fixed LoRa app breaking SD card for all other apps on first open (removed mid-session SPI reinitialization)
+- Fixed wardriving not scanning any networks — WiFi radio is now fully reset before each session, and scans run without requiring a GPS fix
+- Added NFC placeholder on launcher page 3
 
 ## v1.6
 
