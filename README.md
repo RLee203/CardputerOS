@@ -60,7 +60,7 @@ A multi-app operating system for the **M5Stack Cardputer** (ESP32-S3), built wit
 - Sends typed keys plus `Tab`, `Enter`, `Backspace`, and arrow keys to the host
 - Clean status-card UI while active
 
-### Game Boy Emulator *(untested)*
+### Game Boy Emulator 
 - Runs Game Boy (.gb) and Game Boy Color (.gbc) ROMs from microSD card
 - Powered by the [Peanut-GB](https://github.com/deltabeard/Peanut-GB) emulator core
 - Grayscale display, ~60 fps target
