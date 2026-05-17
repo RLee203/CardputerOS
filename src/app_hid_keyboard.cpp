@@ -160,7 +160,16 @@ void appHidKeyboardLoop() {
 
     if (ev.back) {
         ensureUsbState(false);
-        goHome();
+        // USB peripheral stays in HID mode through a soft reset; a full restart
+        // is the only reliable way to re-enumerate as CDC.
+        auto& d = M5Cardputer.Display;
+        d.setFont(&fonts::Font0);
+        d.setTextSize(1);
+        d.setTextColor(C_DIM, C_BG);
+        d.setCursor(14, SCREEN_H - 20);
+        d.print("Restarting to restore USB...");
+        delay(1200);
+        ESP.restart();
         return;
     }
 

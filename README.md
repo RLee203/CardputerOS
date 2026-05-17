@@ -40,7 +40,7 @@ CardputerOS is a multi-app firmware for the **M5Stack Cardputer** built with Pla
 ### Page 3
 - GPS
 - LoRa
-- NFC (coming soon)
+- NFC
 
 ## Supported Files
 
@@ -53,6 +53,7 @@ CardputerOS is a multi-app firmware for the **M5Stack Cardputer** built with Pla
 | Notes | `.txt` | internal flash `/notes/` |
 | GPS Tracker | `.gpx` | microSD `/gps/` |
 | Wardriving | `.csv` | microSD `/gps/` |
+| NFC Dumps | `.txt` | microSD `/nfc/` |
 
 ## Quick Controls
 
@@ -93,14 +94,25 @@ CardputerOS is a multi-app firmware for the **M5Stack Cardputer** built with Pla
 - `Del`: backspace input
 - `fn + D`: clear message log
 
+### NFC
+- `fn + ; / .`: navigate menu
+- `Enter`: select mode / start scan
+- `Bksp`: back / home
+- **Scan**: detect and display tag UID, type, SAK, and NDEF URI
+- **Read**: full memory dump saved to microSD `/nfc/`
+- **Clone**: copy source tag to a blank writable tag
+- **Write NDEF**: write a URL or URI to an NTAG tag
+- **Emulate**: spoof a scanned or loaded tag UID to a reader (UID-only; readers that require full MIFARE sector auth will show auth failed — normal)
+- **Load**: browse and load saved dumps from microSD for Clone or Emulate
+
 ## Flashing
 
 ### Prebuilt
 
-Download `cardputer-os-v1.7-merged.bin` from the [Releases](../../releases) page and flash:
+Download `cardputer-os-v1.8-merged.bin` from the [Releases](../../releases) page and flash:
 
 ```bash
-esptool.py --chip esp32s3 --port COM3 write_flash 0x0 cardputer-os-v1.7-merged.bin
+esptool.py --chip esp32s3 --port YOUR_PORT write_flash 0x0 cardputer-os-v1.8-merged.bin
 ```
 
 ### Build From Source
@@ -118,6 +130,7 @@ pio run --target upload
 - **WiFi:** required for SSH
 - **External IR receiver:** optional, only needed for learning new IR codes
 - **LoRa/GNSS Cap:** required for the GPS and LoRa apps
+- **NFC Module (PN532):** required for the NFC app — connect via Grove on the LoRa cap (G8=SDA, G9=SCL, 3.3V, GND)
 
 ### IR Receiver Wiring
 
@@ -130,6 +143,15 @@ Tested module wiring:
 - black -> `GND`
 - red -> `VCC`
 - white -> `OUT`
+
+## v1.8
+
+- Added full NFC app replacing the placeholder: Scan, Read (full dump to SD), Clone, Write NDEF, Emulate, and Load from SD
+- NFC Emulate spoofs UID/ATQA/SAK to a reader using TgInitAsTarget; ATQA is captured from the live scan and saved in dump files so Load → Emulate uses the correct values
+- Fixed NFC emulate freezing after a reader scans — TgRelease is now sent to cleanly end the RF session before re-arming
+- Fixed NFC app freezing on back-to-home — Wire1 is initialized once and never deinitialized (Wire1.end() deadlocks the ESP32 I2C peripheral when no slave responds)
+- Added PIN lock screen with configurable PIN via Settings — lock activates at boot and clears for the session once unlocked
+- Added PIN confirmation (enter twice) when setting a new PIN in Settings
 
 ## v1.7
 

@@ -23,17 +23,21 @@
 #include "app_timer.h"
 #include "app_gps.h"
 #include "app_lora.h"
+#include "app_nfc.h"
+#include "app_lock.h"
 
 Terminal term;
 
 // ── App state ──────────────────────────────────────────────────────────────
 enum class State {
     BOOT,
-    LAUNCHER, APP_SSH, APP_MP3, APP_NOTES, APP_SETTINGS, APP_GAMES, APP_FILES, APP_IR_REMOTE, APP_PHOTOS, APP_VOICE_MEMOS, APP_HID_KEYBOARD, APP_USB_STORAGE, APP_TIMER, APP_GPS, APP_LORA, APP_PLACEHOLDER
+    LOCK_SCREEN,
+    LAUNCHER, APP_SSH, APP_MP3, APP_NOTES, APP_SETTINGS, APP_GAMES, APP_FILES, APP_IR_REMOTE, APP_PHOTOS, APP_VOICE_MEMOS, APP_HID_KEYBOARD, APP_USB_STORAGE, APP_TIMER, APP_GPS, APP_LORA, APP_NFC, APP_PLACEHOLDER
 };
 
-static State state = State::BOOT;
-static bool  dirty = true;
+static State state            = State::BOOT;
+static bool  dirty            = true;
+static bool  g_sessionUnlocked = false;  // true after correct PIN this boot
 
 static String inputBuf;
 static int    inputCursor = 0;
@@ -43,6 +47,11 @@ static void setState(State s) { state = s; dirty = true; inputBuf = ""; inputCur
 // ── nav.h implementations ──────────────────────────────────────────────────
 
 void goHome() {
+    if (settingsLockEnabled() && !g_sessionUnlocked) {
+        appLockEnter();
+        state = State::LOCK_SCREEN;
+        return;
+    }
     launcherEnter();
     state = State::LAUNCHER;
 }
@@ -106,8 +115,8 @@ void launchApp(AppScene scene) {
             state = State::APP_LORA;
             break;
         case AppScene::NFC:
-            appPlaceholderEnter("NFC");
-            state = State::APP_PLACEHOLDER;
+            appNfcEnter();
+            state = State::APP_NFC;
             break;
     }
 }
@@ -166,7 +175,7 @@ void handleBoot() {
         // Version / tagline
         d.setTextSize(1);
         d.setTextColor(C_DIM, C_BG);
-        const char* ver = "v1.6  --  M5Stack Cardputer";
+        const char* ver = "v1.8  --  M5Stack Cardputer";
         int vw = strlen(ver) * FONT_W;
         d.setCursor((SCREEN_W - vw) / 2, 56);
         d.print(ver);
@@ -209,15 +218,26 @@ void setup() {
     M5Cardputer.Display.setRotation(1);
     M5Cardputer.Display.setFont(&fonts::Font0);
     M5Cardputer.Display.setTextSize(1);
-    // Deselect LoRa chip before SPI init — prevents MISO collision with SD card
-    pinMode(LORA_NSS_PIN, OUTPUT);
-    digitalWrite(LORA_NSS_PIN, HIGH);
+    // Define all LoRa cap pins before SPI init.
+    // Floating pins cause MP3 scroll noise, SD MISO collisions, and spurious IRQs.
+    pinMode(LORA_NSS_PIN,  OUTPUT);          digitalWrite(LORA_NSS_PIN,  HIGH); // deselect SPI
+    pinMode(LORA_RST_PIN,  OUTPUT);          digitalWrite(LORA_RST_PIN,  LOW);  // hold in reset until LoRa app opens
+    pinMode(LORA_BUSY_PIN, INPUT_PULLDOWN);  // LoRa output — pulldown prevents float
+    pinMode(LORA_DIO1_PIN, INPUT_PULLDOWN);  // LoRa IRQ output — pulldown prevents float
     SPI.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, SD_CS_PIN);
 }
 
 void loop() {
     switch (state) {
         case State::BOOT:         handleBoot();        break;
+        case State::LOCK_SCREEN:
+            appLockLoop();
+            if (appLockIsUnlocked()) {
+                g_sessionUnlocked = true;
+                launcherEnter();
+                state = State::LAUNCHER;
+            }
+            break;
         case State::LAUNCHER:     launcherLoop();      break;
         case State::APP_SSH:      appSshLoop();        break;
         case State::APP_MP3:      appMp3Loop();        break;
@@ -233,6 +253,7 @@ void loop() {
         case State::APP_TIMER: appTimerLoop(); break;
         case State::APP_GPS: appGpsLoop(); break;
         case State::APP_LORA: appLoraLoop(); break;
+        case State::APP_NFC: appNfcLoop(); break;
         case State::APP_PLACEHOLDER: appPlaceholderLoop(); break;
     }
 }

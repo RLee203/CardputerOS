@@ -64,6 +64,11 @@ constexpr int SD_MISO_PIN = 39;
 constexpr int SD_MOSI_PIN = 14;
 constexpr int SD_CS_PIN   = 12;
 
+// ── NFC / PN532 (Grove on LoRa cap) ───────────────────────────────────────
+constexpr int NFC_SDA_PIN     = 8;
+constexpr int NFC_SCL_PIN     = 9;
+constexpr const char* NFC_DIR = "/nfc";
+
 // ── GPS / LoRa Cap ────────────────────────────────────────────────────────
 constexpr int GPS_TX_PIN      = 13;   // Cardputer G13 -> cap RX
 constexpr int GPS_RX_PIN      = 15;   // Cardputer G15 <- cap TX
