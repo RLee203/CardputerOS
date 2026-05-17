@@ -11,3 +11,4 @@ struct KeyEvent {
 
 KeyEvent readKeys();
 void     resetSleepTimer();  // call when non-keyboard activity should prevent sleep
+bool     screenJustWoke();   // true once per wake event — cleared after first read

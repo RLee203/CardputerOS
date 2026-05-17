@@ -238,6 +238,7 @@ void loop() {
                 state = State::LAUNCHER;
             }
             break;
+
         case State::LAUNCHER:     launcherLoop();      break;
         case State::APP_SSH:      appSshLoop();        break;
         case State::APP_MP3:      appMp3Loop();        break;
@@ -255,5 +256,13 @@ void loop() {
         case State::APP_LORA: appLoraLoop(); break;
         case State::APP_NFC: appNfcLoop(); break;
         case State::APP_PLACEHOLDER: appPlaceholderLoop(); break;
+    }
+
+    // After every app tick: if lock is enabled and the screen just woke from
+    // sleep, re-lock the session and show the PIN screen.
+    if (screenJustWoke() && settingsLockEnabled() && state != State::LOCK_SCREEN && state != State::BOOT) {
+        g_sessionUnlocked = false;
+        appLockEnter();
+        state = State::LOCK_SCREEN;
     }
 }

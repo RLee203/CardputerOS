@@ -5,6 +5,14 @@
 static unsigned long lastActivityMs = 0;
 static bool          screenSleeping = false;
 static uint8_t       preSleepBright = 128;
+static bool          g_justWoke     = false;
+
+// Returns true once per wake event, then false until the next sleep-wake cycle.
+bool screenJustWoke() {
+    bool w = g_justWoke;
+    g_justWoke = false;
+    return w;
+}
 
 void resetSleepTimer() {
     lastActivityMs = millis();
@@ -38,6 +46,7 @@ KeyEvent readKeys() {
             // Wake on any key press; swallow the key so it isn't acted on.
             screenSleeping = false;
             M5Cardputer.Display.setBrightness(preSleepBright);
+            g_justWoke = true;
             return ev;
         }
     }
