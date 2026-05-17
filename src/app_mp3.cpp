@@ -118,6 +118,8 @@ static void playPrev() {
 
 void appMp3Enter() {
     mp3Sel = 0; mp3Playing = false; mp3Paused = false; mp3Count = 0;
+    digitalWrite(LORA_NSS_PIN, HIGH);
+    digitalWrite(LORA_RST_PIN, LOW);
     sdOk = SD.begin(SD_CS_PIN, SPI, 25000000);
     if (sdOk) {
         File root = SD.open("/");

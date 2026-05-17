@@ -212,6 +212,8 @@ static bool loadRom(int idx) {
 void appGamesEnter() {
     gbScene = GBScene::ROM_BROWSE;
     romSel = 0; romCount = 0;
+    digitalWrite(LORA_NSS_PIN, HIGH);
+    digitalWrite(LORA_RST_PIN, LOW);
     sdOk = SD.begin(SD_CS_PIN, SPI, 25000000);
     if (sdOk) {
         File root = SD.open("/");

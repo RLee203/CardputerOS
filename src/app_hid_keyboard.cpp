@@ -12,10 +12,34 @@
 #endif
 #include "USBHIDKeyboard.h"
 
+// File-scope so the shared hidKb* API below can reach it.
+static USBHIDKeyboard usbKeyboard;
+static bool hidEnabled = false;
+
+// ── Shared HID API (used by app_payloads) ──────────────────────────────────
+bool hidKbEnsureEnabled() {
+    if (hidEnabled) return true;
+    hidEnabled = true;
+    usbKeyboard.begin();
+    USB.begin();
+    delay(500);  // give host time to enumerate
+    return true;
+}
+bool hidKbIsEnabled()              { return hidEnabled; }
+void hidKbTypeString(const char* s){ usbKeyboard.print(s); }
+void hidKbPressRelease(uint8_t k)  { usbKeyboard.press(k); delay(30); usbKeyboard.releaseAll(); }
+void hidKbModKey(uint8_t m, uint8_t k) {
+    usbKeyboard.press(m); usbKeyboard.press(k); delay(30); usbKeyboard.releaseAll();
+}
+void hidKbMod2Key(uint8_t m1, uint8_t m2, uint8_t k) {
+    usbKeyboard.press(m1); usbKeyboard.press(m2); usbKeyboard.press(k);
+    delay(30); usbKeyboard.releaseAll();
+}
+void hidKbReleaseAll() { usbKeyboard.releaseAll(); }
+
 namespace {
-USBHIDKeyboard usbKeyboard;
 bool hidDirty = true;
-bool hidEnabled = false;
+bool hidAppEnabled = false;  // tracks enabled state for the HID app UI
 String hidStatus;
 uint32_t hidStatusUntilMs = 0;
 static constexpr uint32_t HID_STATUS_MS = 1600;
@@ -34,11 +58,10 @@ void clearExpiredStatus() {
 }
 
 void ensureUsbState(bool enabled) {
-    if (enabled == hidEnabled) return;
-    hidEnabled = enabled;
-    if (hidEnabled) {
-        usbKeyboard.begin();
-        USB.begin();
+    if (enabled == hidAppEnabled) return;
+    hidAppEnabled = enabled;
+    if (hidAppEnabled) {
+        hidKbEnsureEnabled();
         showStatus("USB keyboard enabled");
     } else {
         usbKeyboard.releaseAll();
@@ -59,9 +82,9 @@ void drawScreen() {
     d.print("HID Keyboard");
     drawBatteryWidget(C_STATUS_BG, SCREEN_W - 43);
 
-    uint32_t cardBg = hidEnabled ? 0x003B22 : 0x2A2400;
-    uint32_t cardBorder = hidEnabled ? 0x00D27A : 0xD8B000;
-    uint32_t stateColor = hidEnabled ? 0x6CFFB2 : 0xFFE36C;
+    uint32_t cardBg = hidAppEnabled ? 0x003B22 : 0x2A2400;
+    uint32_t cardBorder = hidAppEnabled ? 0x00D27A : 0xD8B000;
+    uint32_t stateColor = hidAppEnabled ? 0x6CFFB2 : 0xFFE36C;
     d.fillRoundRect(10, 22, 220, 56, 8, cardBg);
     d.drawRoundRect(10, 22, 220, 56, 8, cardBorder);
     d.drawRoundRect(11, 23, 218, 54, 7, cardBorder);
@@ -72,7 +95,7 @@ void drawScreen() {
 
     d.setTextColor(stateColor, cardBg);
     d.setTextSize(2);
-    const char* stateText = hidEnabled ? "ACTIVE" : "READY";
+    const char* stateText = hidAppEnabled ? "ACTIVE" : "READY";
     int sw = strlen(stateText) * FONT_W * 2;
     d.setCursor((SCREEN_W - sw) / 2, 44);
     d.print(stateText);
@@ -80,7 +103,7 @@ void drawScreen() {
 
     d.setTextColor(C_FG, C_BG);
     d.setCursor(14, 88);
-    if (hidEnabled) {
+    if (hidAppEnabled) {
         d.print("Typing to host over USB");
     } else {
         d.print("Press Enter to enable");
@@ -99,7 +122,7 @@ void drawScreen() {
         d.print(hidStatus.c_str());
     } else {
         d.setTextColor(C_DIM, C_BG);
-        d.print(hidEnabled ? "Keyboard active" : "Enter=enable");
+        d.print(hidAppEnabled ? "Keyboard active" : "Enter=enable");
     }
 }
 
@@ -173,12 +196,12 @@ void appHidKeyboardLoop() {
         return;
     }
 
-    if (ev.enter && !hidEnabled) {
+    if (ev.enter && !hidAppEnabled) {
         ensureUsbState(true);
         return;
     }
 
-    if (!hidEnabled) return;
+    if (!hidAppEnabled) return;
 
     if (ev.fnKey) {
         for (char c : ev.chars) {

@@ -155,7 +155,9 @@ void writeTrackerFooter(File& file) {
 
 void stopTracker() {
     if (!g_trackerRunning) return;
-    if (SD.begin(SD_CS_PIN)) {
+    digitalWrite(LORA_NSS_PIN, HIGH);
+    digitalWrite(LORA_RST_PIN, LOW);
+    if (SD.begin(SD_CS_PIN, SPI, 25000000)) {
         File file = SD.open(g_trackerFile, FILE_APPEND);
         if (file) {
             writeTrackerFooter(file);
@@ -168,7 +170,9 @@ void stopTracker() {
 }
 
 void startTracker() {
-    if (!SD.begin(SD_CS_PIN)) return;
+    digitalWrite(LORA_NSS_PIN, HIGH);
+    digitalWrite(LORA_RST_PIN, LOW);
+    if (!SD.begin(SD_CS_PIN, SPI, 25000000)) return;
     if (!SD.exists(GPS_DIR)) SD.mkdir(GPS_DIR);
 
     g_trackerFile = trackerFilename();
@@ -194,6 +198,8 @@ void stopWardriving() {
 }
 
 void startWardriving() {
+    digitalWrite(LORA_NSS_PIN, HIGH);
+    digitalWrite(LORA_RST_PIN, LOW);
     if (!SD.begin(SD_CS_PIN, SPI, 25000000)) return;
 
     if (!SD.exists(GPS_DIR)) SD.mkdir(GPS_DIR);
@@ -310,7 +316,9 @@ void logTrackerPoint() {
     g_lastTrackLon = lon;
     g_haveTrackPoint = true;
 
-    if (!SD.begin(SD_CS_PIN)) return;
+    digitalWrite(LORA_NSS_PIN, HIGH);
+    digitalWrite(LORA_RST_PIN, LOW);
+    if (!SD.begin(SD_CS_PIN, SPI, 25000000)) return;
     File file = SD.open(g_trackerFile, FILE_APPEND);
     if (!file) return;
 

@@ -41,6 +41,8 @@ static const AppEntry APPS[] = {
     { "GPS", 'x', AppScene::GPS, 0x005E7A },
     { "LoRa", 'l', AppScene::LORA, 0x7A3E00 },
     { "NFC", 'c', AppScene::NFC, 0x006644 },
+    { "Payloads", 'y', AppScene::PAYLOADS, 0x8B0013 },
+    { "BLE", 'e', AppScene::BLE, 0x003566 },
 };
 static constexpr int APP_COUNT = (int)(sizeof(APPS) / sizeof(APPS[0]));
 
@@ -243,6 +245,34 @@ static void iTimer(int cx, int cy) {
     d.drawFastHLine(cx - 3, cy - 13, 6, 0xFFFFFF);
 }
 
+static void iPayloads(int cx, int cy) {
+    auto& d = M5Cardputer.Display;
+    // Script/inject icon: document with right-arrow
+    d.drawRoundRect(cx - 9, cy - 11, 14, 18, 2, 0xFFFFFF);
+    d.fillRect(cx - 6, cy - 7, 8, 2, 0xFFFFFF);
+    d.fillRect(cx - 6, cy - 2, 8, 2, 0xFFFFFF);
+    d.fillRect(cx - 6, cy + 3, 5, 2, 0xFFFFFF);
+    // Arrow pointing right
+    d.fillTriangle(cx + 7, cy, cx + 3, cy - 4, cx + 3, cy + 4, 0xFFFFFF);
+    d.fillRect(cx - 1, cy - 1, 5, 2, 0xFFFFFF);
+}
+
+static void iBle(int cx, int cy) {
+    auto& d = M5Cardputer.Display;
+    // Bluetooth "B-rune" symbol: vertical bar + two right-facing triangles
+    d.drawFastVLine(cx, cy - 10, 20, 0xFFFFFF);
+    // Upper right lobe
+    d.drawLine(cx, cy - 10, cx + 7, cy - 4, 0xFFFFFF);
+    d.drawLine(cx + 7, cy - 4, cx, cy + 2, 0xFFFFFF);
+    // Lower right lobe
+    d.drawLine(cx, cy + 2, cx + 7, cy + 8, 0xFFFFFF);
+    d.drawLine(cx + 7, cy + 8, cx, cy + 14, 0xFFFFFF);
+    // Upper left arm
+    d.drawLine(cx, cy - 4, cx - 5, cy - 8, 0xFFFFFF);
+    // Lower left arm
+    d.drawLine(cx, cy + 8, cx - 5, cy + 12, 0xFFFFFF);
+}
+
 // ── Cell ───────────────────────────────────────────────────────────────────
 
 static void drawCell(int row, int col) {
@@ -286,7 +316,9 @@ static void drawCell(int row, int col) {
         case 11: iTimer(icx, icy);       break;
         case 12: iGPS(icx, icy);         break;
         case 13: iLora(icx, icy);        break;
-        case 14: iNfc(icx, icy);         break;
+        case 14: iNfc(icx, icy);          break;
+        case 15: iPayloads(icx, icy);    break;
+        case 16: iBle(icx, icy);         break;
     }
 
     // Label

@@ -148,6 +148,7 @@ void appLoraLoop() {
     if (!ev.changed) return;
 
     if (ev.back) {
+        digitalWrite(LORA_RST_PIN, LOW);   // return SX1262 to reset so SPI/MISO is released
         goHome();
         return;
     }
@@ -155,6 +156,7 @@ void appLoraLoop() {
     if (ev.fnKey) {
         for (char c : ev.chars) {
             if (c == 'q' || c == 'Q') {
+                digitalWrite(LORA_RST_PIN, LOW);
                 goHome();
                 return;
             }

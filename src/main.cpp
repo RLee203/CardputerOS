@@ -25,6 +25,8 @@
 #include "app_lora.h"
 #include "app_nfc.h"
 #include "app_lock.h"
+#include "app_payloads.h"
+#include "app_ble.h"
 
 Terminal term;
 
@@ -32,7 +34,7 @@ Terminal term;
 enum class State {
     BOOT,
     LOCK_SCREEN,
-    LAUNCHER, APP_SSH, APP_MP3, APP_NOTES, APP_SETTINGS, APP_GAMES, APP_FILES, APP_IR_REMOTE, APP_PHOTOS, APP_VOICE_MEMOS, APP_HID_KEYBOARD, APP_USB_STORAGE, APP_TIMER, APP_GPS, APP_LORA, APP_NFC, APP_PLACEHOLDER
+    LAUNCHER, APP_SSH, APP_MP3, APP_NOTES, APP_SETTINGS, APP_GAMES, APP_FILES, APP_IR_REMOTE, APP_PHOTOS, APP_VOICE_MEMOS, APP_HID_KEYBOARD, APP_USB_STORAGE, APP_TIMER, APP_GPS, APP_LORA, APP_NFC, APP_PAYLOADS, APP_BLE, APP_PLACEHOLDER
 };
 
 static State state            = State::BOOT;
@@ -118,6 +120,14 @@ void launchApp(AppScene scene) {
             appNfcEnter();
             state = State::APP_NFC;
             break;
+        case AppScene::PAYLOADS:
+            appPayloadsEnter();
+            state = State::APP_PAYLOADS;
+            break;
+        case AppScene::BLE:
+            appBleEnter();
+            state = State::APP_BLE;
+            break;
     }
 }
 
@@ -175,7 +185,7 @@ void handleBoot() {
         // Version / tagline
         d.setTextSize(1);
         d.setTextColor(C_DIM, C_BG);
-        const char* ver = "v1.8  --  M5Stack Cardputer";
+        const char* ver = "v1.9  --  M5Stack Cardputer";
         int vw = strlen(ver) * FONT_W;
         d.setCursor((SCREEN_W - vw) / 2, 56);
         d.print(ver);
@@ -254,7 +264,9 @@ void loop() {
         case State::APP_TIMER: appTimerLoop(); break;
         case State::APP_GPS: appGpsLoop(); break;
         case State::APP_LORA: appLoraLoop(); break;
-        case State::APP_NFC: appNfcLoop(); break;
+        case State::APP_NFC:       appNfcLoop();       break;
+        case State::APP_PAYLOADS:  appPayloadsLoop();  break;
+        case State::APP_BLE:       appBleLoop();       break;
         case State::APP_PLACEHOLDER: appPlaceholderLoop(); break;
     }
 

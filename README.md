@@ -11,13 +11,15 @@ CardputerOS is a multi-app firmware for the **M5Stack Cardputer** built with Pla
 - Voice Memos with record, playback, delete, and volume control
 - IR Remote with learn, save, delete, and resend
 - Photos viewer for microSD images
-- USB HID Keyboard mode over USB-C
+- USB HID Keyboard / Rubber Ducky payloads over USB-C
 - USB Storage mode for sharing the microSD card over USB-C
 - Timer with presets, manual keypad entry, and Stopwatch mode
 - GPS status, tracker, and wardriving tools for the LoRa/GNSS cap
 - Basic LoRa raw-text chat for the LoRa/GNSS cap
 - File Manager for SD and internal flash
 - Game Boy emulator support
+- BLE scanner with live device list and SD wardriving log
+- Payloads (DuckyScript / Rubber Ducky USB HID injection from SD card)
 
 ## Current App Pages
 
@@ -41,6 +43,8 @@ CardputerOS is a multi-app firmware for the **M5Stack Cardputer** built with Pla
 - GPS
 - LoRa
 - NFC
+- Payloads
+- BLE
 
 ## Supported Files
 
@@ -52,8 +56,10 @@ CardputerOS is a multi-app firmware for the **M5Stack Cardputer** built with Pla
 | Voice Memos | `.wav` | microSD `/voice/` |
 | Notes | `.txt` | internal flash `/notes/` |
 | GPS Tracker | `.gpx` | microSD `/gps/` |
-| Wardriving | `.csv` | microSD `/gps/` |
+| GPS Wardriving | `.csv` | microSD `/gps/` |
 | NFC Dumps | `.txt` | microSD `/nfc/` |
+| Payloads | `.txt`, `.ds` | microSD `/payloads/` |
+| BLE Wardriving | `.csv` | microSD `/ble/` |
 
 ## Quick Controls
 
@@ -109,10 +115,10 @@ CardputerOS is a multi-app firmware for the **M5Stack Cardputer** built with Pla
 
 ### Prebuilt
 
-Download `cardputer-os-v1.8-merged.bin` from the [Releases](../../releases) page and flash:
+Download `cardputer-os-v1.9-merged.bin` from the [Releases](../../releases) page and flash:
 
 ```bash
-esptool.py --chip esp32s3 --port YOUR_PORT write_flash 0x0 cardputer-os-v1.8-merged.bin
+esptool.py --chip esp32s3 --port YOUR_PORT write_flash 0x0 cardputer-os-v1.9-merged.bin
 ```
 
 ### Build From Source
@@ -143,6 +149,14 @@ Tested module wiring:
 - black -> `GND`
 - red -> `VCC`
 - white -> `OUT`
+
+## v1.9
+
+- Added Payloads app — run DuckyScript `.txt`/`.ds` files from microSD over USB HID (Rubber Ducky style)
+- Added BLE Scanner app — real-time BLE device scan with RSSI list and SD wardriving log (`/ble/scan_XXXX.csv`)
+- Fixed SD card failing to mount in all apps when the LoRa/GNSS cap is attached — LoRa SPI pins are now asserted before every SD.begin() across all apps
+- Fixed LoRa app leaving SX1262 chip active on exit, which blocked SD access in subsequent apps
+- Fixed BLE wardriving back key — scan loop now runs in 1-second chunks so key presses are always caught
 
 ## v1.8
 

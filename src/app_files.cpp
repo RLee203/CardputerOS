@@ -161,6 +161,8 @@ void appFilesEnter() {
     filesSource = FilesSource::SOURCE_SD;
     filesDirty  = true;
     fileSel     = 0;
+    digitalWrite(LORA_NSS_PIN, HIGH);
+    digitalWrite(LORA_RST_PIN, LOW);
     sdOk  = SD.begin(SD_CS_PIN, SPI, 25000000);
     lfsOk = LittleFS.begin(false);
     loadFileList();
