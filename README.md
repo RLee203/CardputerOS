@@ -2,12 +2,12 @@
 
 CardputerOS is a multi-app firmware for the **M5Stack Cardputer** built with PlatformIO and Arduino.
 
-## CardputerOS 2.0
+## CardputerOS 2.1
 
-`2.0` splits the firmware into two cleaner boot modes instead of forcing fragile live handoffs:
+`2.1` keeps the split boot-mode design and expands the radio-side tools while cleaning up SD and mode behavior:
 
-- `SD Mode`: MP3, Files, Photos, Games, Voice Memos, IR, USB Storage, Timer, HID Keyboard
-- `Radio Mode`: WiFi, BLE, Detector, SSH, GPS, LoRa, NFC, Payloads
+- `SD Mode`: MP3, Files, Photos, Games, Voice Memos, IR, USB Storage, Timer, HID Keyboard, Payloads
+- `Radio Mode`: WiFi, BLE, Detector, SSH, GPS, LoRa, NFC
 
 Switching between modes uses a restart prompt so SD/audio apps and radio apps do not fight over memory and device state.
 
@@ -27,7 +27,9 @@ Switching between modes uses a restart prompt so SD/audio apps and radio apps do
 - Basic LoRa raw-text chat for the LoRa/GNSS cap
 - File Manager for SD and internal flash
 - Game Boy emulator support
-- BLE scanner, Threat Detector, NFC tools, and USB device testing
+- BLE scanner and BLE spoofer tools
+- WiFi radio tools including PMKID capture support
+- Threat Detector, Rogue AP scan, NFC tools, and USB device testing
 
 ## Launcher Layout
 
@@ -114,10 +116,10 @@ Switching between modes uses a restart prompt so SD/audio apps and radio apps do
 
 ### Prebuilt
 
-Download `cardputer-os-v2.0-merged.bin` from the [Releases](../../releases) page and flash:
+Download `cardputer-os-v2.1-merged.bin` from the [Releases](../../releases) page and flash:
 
 ```bash
-esptool.py --chip esp32s3 --port YOUR_PORT write_flash 0x0 cardputer-os-v2.0-merged.bin
+esptool.py --chip esp32s3 --port YOUR_PORT write_flash 0x0 cardputer-os-v2.1-merged.bin
 ```
 
 ### Build From Source
@@ -148,13 +150,15 @@ Tested module wiring:
 - red -> `VCC`
 - white -> `OUT`
 
-## 2.0 Notes
+## 2.1 Notes
 
-- Added split boot modes: `SD Mode` and `Radio Mode`
-- Added mode-aware launcher and restart prompts when switching between incompatible app groups
-- Moved WiFi connection flow into the dedicated WiFi app
-- Cleaned up BLE / Detector / WiFi radio handoff to avoid the no-memory reboots seen with live stack overlap
-- Fixed MP3 causing SD apps to lose mount state after playback by fully tearing down the audio object on exit
+- Moved `Payloads` into `SD Mode`, where it fits the SD + USB workflow better than the radio stack
+- Improved WiFi app flow with scan-first connection, visible password entry, and cleaner reconnect behavior after BLE use
+- Expanded `Detector` with additional radio monitoring views, including BLE spam monitoring and Rogue AP detection
+- Expanded `BLE` with BLE spoofing tools and safer WiFi shutdown before BLE init
+- Added PMKID capture support to the WiFi radio tools
+- Fixed MP3 teardown so leaving playback no longer breaks SD mounting for other SD apps
+- Kept the split `SD Mode` / `Radio Mode` launcher and restart-based mode switching from `2.0`
 
 ## Credits
 

@@ -142,7 +142,7 @@ static const char* MENU_FOOTER[] = {
     "fn+, prev  fn+/ next theme",
     "Enter to open",
     "fn+, prev  fn+/ next timeout",
-    "Cardputer OS v2.0",
+    "Cardputer OS v2.1",
     "Enter to toggle on/off",
     "Enter to set a new PIN",
     "Enter to switch and restart",
@@ -195,7 +195,7 @@ static void drawMenu() {
                 d.print(buf);
                 break;
             case 4:
-                d.print("About: Cardputer OS v2.0");
+                d.print("About: Cardputer OS v2.1");
                 if (sel) {
                     d.setTextColor(C_DIM, bg);
                     d.setCursor(SCREEN_W / 2, y + 2);

@@ -47,8 +47,8 @@ static const AppEntry APPS[] = {
     { "WiFi", 'w', AppScene::WIFI_TOOLS, 0x003377 },
 };
 static constexpr int APP_COUNT = (int)(sizeof(APPS) / sizeof(APPS[0]));
-static const int SD_APP_IDS[] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 };
-static const int RADIO_APP_IDS[] = { 0, 4, 12, 13, 14, 15, 16, 17, 18 };
+static const int SD_APP_IDS[] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15 };
+static const int RADIO_APP_IDS[] = { 0, 4, 12, 13, 14, 16, 17, 18 };
 static constexpr int SD_APP_COUNT = (int)(sizeof(SD_APP_IDS) / sizeof(SD_APP_IDS[0]));
 static constexpr int RADIO_APP_COUNT = (int)(sizeof(RADIO_APP_IDS) / sizeof(RADIO_APP_IDS[0]));
 

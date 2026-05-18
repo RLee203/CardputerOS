@@ -26,7 +26,7 @@ static bool ciContains(const char* hay, const char* needle) {
 
 // ── State ──────────────────────────────────────────────────────────────────
 
-enum class DetState { MAIN_MENU, THREAT_DONE, WIFI_DONE, DEAUTH_MON, PROBE_SNIFF };
+enum class DetState { MAIN_MENU, THREAT_DONE, WIFI_DONE, DEAUTH_MON, PROBE_SNIFF, BLE_SPAM, ROGUE_AP };
 static DetState  s_state    = DetState::MAIN_MENU;
 static bool      s_dirty    = true;
 static int       s_menuSel  = 0;
@@ -102,6 +102,31 @@ static ThreatBleCallbacks s_threatBleCallbacks;
 static bool     s_bleInited = false;
 static NimBLEScan* s_bleScan   = nullptr;
 
+// ── BLE Spam Monitor ─────────────────────────────────────────────────────────
+static volatile int s_spamAppleWin  = 0; // advertisements seen this 5s window
+static volatile int s_spamFpWin     = 0;
+static int          s_spamApplePeak = 0;
+static int          s_spamFpPeak    = 0;
+static int          s_spamAppleTot  = 0;
+static int          s_spamFpTot     = 0;
+static uint32_t     s_spamWinStart  = 0;
+
+class SpamCallbacks : public NimBLEAdvertisedDeviceCallbacks {
+    void onResult(NimBLEAdvertisedDevice* dev) override {
+        if (dev->haveManufacturerData()) {
+            auto mfr = dev->getManufacturerData();
+            if (mfr.length() >= 2 && (uint8_t)mfr[0] == 0x4C && (uint8_t)mfr[1] == 0x00) {
+                s_spamAppleWin++; s_spamAppleTot++; return;
+            }
+        }
+        static const NimBLEUUID fpUuid((uint16_t)0xFE2C);
+        if (dev->haveServiceUUID() && dev->isAdvertisingService(fpUuid)) {
+            s_spamFpWin++; s_spamFpTot++;
+        }
+    }
+};
+static SpamCallbacks s_spamCallbacks;
+
 static void onThreatBleScanDone(NimBLEScanResults) {
     s_bleScanDone = true;
 }
@@ -155,7 +180,7 @@ struct ApInfo {
     char ssid[33]; char bssid[18];
     int rssi; uint8_t ch;
     char enc[7];
-    bool flagOpen; bool flagTwin;
+    bool flagOpen; bool flagTwin; bool flagDowngrade; // downgrade=twin with mixed enc
 };
 static constexpr int MAX_APS = 32;
 static ApInfo s_aps[MAX_APS];
@@ -193,13 +218,22 @@ static void runWifiAnalyzer() {
         a.ch   = (uint8_t)WiFi.channel(i);
         strncpy(a.enc, encStr(WiFi.encryptionType(i)), 6); a.enc[6]='\0';
         a.flagOpen = (WiFi.encryptionType(i) == WIFI_AUTH_OPEN);
-        a.flagTwin = false;
+        a.flagTwin = false; a.flagDowngrade = false;
     }
-    // Evil twin detection: same SSID, different BSSID
+    // Evil twin detection: same SSID → flag both
     for (int i = 0; i < s_apCount; i++)
         for (int j = i+1; j < s_apCount; j++)
             if (strcmp(s_aps[i].ssid, s_aps[j].ssid) == 0)
                 { s_aps[i].flagTwin = true; s_aps[j].flagTwin = true; }
+    // Security downgrade: same SSID but mixed open/encrypted → mark downgrade
+    for (int i = 0; i < s_apCount; i++) {
+        if (!s_aps[i].flagTwin) continue;
+        for (int j = 0; j < s_apCount; j++) {
+            if (i==j || strcmp(s_aps[i].ssid,s_aps[j].ssid)!=0) continue;
+            if (s_aps[i].flagOpen != s_aps[j].flagOpen)
+                { s_aps[i].flagDowngrade = s_aps[j].flagDowngrade = true; }
+        }
+    }
     WiFi.scanDelete(); WiFi.mode(WIFI_OFF);
     // Sort by RSSI descending (bubble)
     for (int i = 0; i < s_apCount-1; i++)
@@ -278,6 +312,111 @@ static void stopPromiscuous() {
     s_dirty = true;
 }
 
+static void drawBar(const char* title); // forward decl
+
+static void drawRogueResults() {
+    auto& d=M5Cardputer.Display;
+    d.fillScreen(C_BG); drawBar("Rogue AP Scan");
+    d.setFont(&fonts::Font0); d.setTextSize(1);
+    // Collect flagged APs only
+    int flagCount=0;
+    for (int i=0;i<s_apCount;i++) if (s_aps[i].flagTwin||s_aps[i].flagOpen) flagCount++;
+    if (flagCount==0) {
+        d.setTextColor(0x00CC44,C_BG); d.setTextSize(2);
+        const char* ok="No Rogues";
+        d.setCursor((SCREEN_W-(int)strlen(ok)*FONT_W*2)/2,40); d.print(ok);
+        d.setTextSize(1); d.setTextColor(C_DIM,C_BG);
+        d.setCursor(14,68); d.print("No duplicate SSIDs or open/enc");
+        d.setCursor(14,78); d.print("mismatch detected.");
+        d.setCursor(2,SCREEN_H-10); d.print("Enter=rescan  bksp=back");
+        return;
+    }
+    constexpr int ROW_H=13;
+    constexpr int ROWS=(SCREEN_H-STATUS_H-12)/ROW_H;
+    int row=0;
+    for (int i=0;i<s_apCount && row<ROWS+s_scroll;i++) {
+        const auto& a=s_aps[i];
+        if (!a.flagTwin && !a.flagOpen) continue;
+        if (row<s_scroll) { row++; continue; }
+        int y=STATUS_H+2+(row-s_scroll)*ROW_H;
+        uint32_t col=a.flagDowngrade?0xFF2222:a.flagTwin?0xFF8800:0xFFAA00;
+        d.fillRect(0,y,3,ROW_H-1,col);
+        d.setTextColor(col,C_BG);
+        const char* tag=a.flagDowngrade?"DNGRD":a.flagTwin?"TWIN":"OPEN";
+        d.setCursor(6,y+2); d.print(tag);
+        d.setTextColor(0xFFFFFF,C_BG);
+        char buf[36]; snprintf(buf,sizeof(buf)," %-20s %s",a.ssid,a.enc);
+        d.setCursor(36,y+2); d.print(buf);
+        row++;
+    }
+    char foot[40]; snprintf(foot,sizeof(foot),"%d flagged  up/dn  Enter=rescan",flagCount);
+    d.setTextColor(C_DIM,C_BG); d.setCursor(2,SCREEN_H-10); d.print(foot);
+}
+
+static void startBleSpamMon() {
+    s_spamAppleWin=0; s_spamFpWin=0;
+    s_spamApplePeak=0; s_spamFpPeak=0;
+    s_spamAppleTot=0; s_spamFpTot=0;
+    s_spamWinStart=millis();
+    if (WiFi.getMode()!=WIFI_OFF) { WiFi.disconnect(true,true); delay(80); WiFi.mode(WIFI_OFF); delay(150); }
+    if (s_bleInited) { NimBLEDevice::deinit(true); s_bleScan=nullptr; s_bleInited=false; }
+    NimBLEDevice::init("");
+    s_bleScan=NimBLEDevice::getScan();
+    s_bleScan->setAdvertisedDeviceCallbacks(&s_spamCallbacks, true); // true=allow duplicates
+    s_bleScan->setActiveScan(false);
+    s_bleScan->setInterval(100); s_bleScan->setWindow(99);
+    s_bleScan->start(0, nullptr, false);
+    s_bleInited=true;
+    s_state=DetState::BLE_SPAM; s_lastRedraw=0;
+}
+
+static void stopBleSpamMon() {
+    if (s_bleScan && s_bleScan->isScanning()) s_bleScan->stop();
+    if (s_bleInited) { NimBLEDevice::deinit(true); s_bleScan=nullptr; s_bleInited=false; }
+    s_state=DetState::MAIN_MENU; s_dirty=true;
+}
+
+static void drawBleSpamMon() {
+    auto& d=M5Cardputer.Display;
+    d.fillScreen(C_BG); drawBar("BLE Spam Monitor");
+    d.setFont(&fonts::Font0); d.setTextSize(1);
+    // Window countdown
+    int elapsed=(int)((millis()-s_spamWinStart)/1000);
+    char win[28]; snprintf(win,sizeof(win),"Window: %ds / 5s  tot A:%d F:%d",
+                            elapsed%5, s_spamAppleTot, s_spamFpTot);
+    d.setTextColor(C_DIM,C_BG); d.setCursor(2,STATUS_H+2); d.print(win);
+    // Apple row
+    int aw=s_spamAppleWin, ap=s_spamApplePeak;
+    uint32_t ac=ap>=15?0xFF3333:ap>=5?0xFF8800:0x00CC44;
+    d.setTextColor(ac,C_BG);
+    char ab[38]; snprintf(ab,sizeof(ab),"Apple 0x4C00   win:%-3d peak:%d",aw,ap);
+    d.setCursor(4,36); d.print(ab);
+    // Fast Pair row
+    int fw=s_spamFpWin, fp=s_spamFpPeak;
+    uint32_t fc=fp>=10?0xFF3333:fp>=3?0xFF8800:0x00CC44;
+    d.setTextColor(fc,C_BG);
+    char fb[38]; snprintf(fb,sizeof(fb),"FastPair 0xFE2C win:%-3d peak:%d",fw,fp);
+    d.setCursor(4,48); d.print(fb);
+    // Alert / OK banner
+    bool alert=(ap>=15||fp>=10);
+    if (alert) {
+        d.setTextColor(0xFF3333,C_BG); d.setTextSize(2);
+        const char* msg="BLE SPAM!";
+        d.setCursor((SCREEN_W-(int)strlen(msg)*FONT_W*2)/2,72); d.print(msg);
+        d.setTextSize(1); d.setTextColor(C_DIM,C_BG);
+        d.setCursor(4,96);
+        if (ap>=15) d.print("Apple Juice attack detected");
+        else        d.print("Fast Pair spam detected");
+    } else {
+        d.setTextColor(0x00CC44,C_BG); d.setTextSize(2);
+        const char* ok="Clear";
+        d.setCursor((SCREEN_W-(int)strlen(ok)*FONT_W*2)/2,72); d.print(ok);
+        d.setTextSize(1);
+    }
+    d.setTextColor(C_DIM,C_BG); d.setCursor(2,SCREEN_H-10);
+    d.print("Watching...  bksp=stop");
+}
+
 // ── Display ────────────────────────────────────────────────────────────────
 
 static void drawBar(const char* title) {
@@ -289,37 +428,43 @@ static void drawBar(const char* title) {
     drawBatteryWidget(C_STATUS_BG, SCREEN_W-43);
 }
 
-static const char* MENU_LABELS[4] = {
+static const char* MENU_LABELS[6] = {
     "Threat Scan",
     "WiFi Analyzer",
     "Deauth Monitor",
-    "Probe Sniffer"
+    "Probe Sniffer",
+    "BLE Spam Watch",
+    "Rogue AP Scan"
 };
-static const char* MENU_DESC[4] = {
+static const char* MENU_DESC[6] = {
     "BLE+WiFi malware signatures",
-    "All APs, enc, evil twin flag",
+    "All APs, enc, twin flag",
     "Detect deauth/disassoc floods",
-    "What SSIDs devices seek"
+    "What SSIDs devices seek",
+    "Apple Juice / Fast Pair spam",
+    "Dup SSID & downgrade attacks"
 };
-static const uint32_t MENU_COLS[4] = { 0xFF3333, 0x0066CC, 0xFF8800, 0x00AA66 };
+static const uint32_t MENU_COLS[6] = { 0xFF3333, 0x0066CC, 0xFF8800, 0x00AA66, 0xAA00CC, 0xFF3399 };
 
 static void drawMainMenu() {
     auto& d = M5Cardputer.Display;
     d.fillScreen(C_BG); drawBar("RF Monitor");
     d.setFont(&fonts::Font0); d.setTextSize(1);
-    for (int i = 0; i < 4; i++) {
-        int y = 15 + i * 28;
+    for (int i = 0; i < 6; i++) {
+        int y = STATUS_H + 2 + i * 18;  // 15,33,51,69,87,105 — last bottom=122<125
         bool sel = (i == s_menuSel);
         uint32_t col = MENU_COLS[i];
-        if (sel) { d.fillRoundRect(2, y, SCREEN_W-4, 26, 4, col); d.setTextColor(0x000000, col); }
-        else      { d.drawRoundRect(2, y, SCREEN_W-4, 26, 4, col); d.setTextColor(col, C_BG); }
-        d.setCursor(10, y+5); d.print(MENU_LABELS[i]);
-        d.setTextColor(sel ? (uint32_t)0x333333 : (uint32_t)C_DIM, sel ? col : (uint32_t)C_BG);
-        d.setCursor(10, y+15); d.print(MENU_DESC[i]);
+        // Left accent bar style for compact 6-item layout
+        d.fillRect(0, y, 3, 17, col);
+        if (sel) { d.fillRect(3, y, SCREEN_W-3, 17, 0x111111); d.setTextColor(col, 0x111111); }
+        else      { d.setTextColor(col, C_BG); }
+        d.setCursor(8, y+2); d.print(MENU_LABELS[i]);
+        d.setTextColor(sel?(uint32_t)0x666666:(uint32_t)C_DIM, sel?(uint32_t)0x111111:(uint32_t)C_BG);
+        d.setCursor(8, y+10); d.print(MENU_DESC[i]);
     }
     d.setTextColor(C_DIM, C_BG);
     d.setCursor(2, SCREEN_H-10);
-    d.print("up/dn=select  Enter=start  fn+bksp=back");
+    d.print("up/dn  Enter=start  bksp=home");
 }
 
 static void drawThreatResults() {
@@ -464,6 +609,8 @@ static void startMode() {
         case 1: runWifiAnalyzer(); s_state=DetState::WIFI_DONE;  s_dirty=true; break;
         case 2: startPromiscuous(1); s_state=DetState::DEAUTH_MON;  s_lastRedraw=0; break;
         case 3: startPromiscuous(2); s_state=DetState::PROBE_SNIFF; s_lastRedraw=0; break;
+        case 4: startBleSpamMon(); break;
+        case 5: runWifiAnalyzer(); s_state=DetState::ROGUE_AP; s_dirty=true; break;
     }
 }
 
@@ -471,6 +618,7 @@ static void startMode() {
 
 void appDetectorEnter() {
     if (s_state==DetState::DEAUTH_MON || s_state==DetState::PROBE_SNIFF) stopPromiscuous();
+    if (s_state==DetState::BLE_SPAM) stopBleSpamMon();
     s_state=DetState::MAIN_MENU; s_dirty=true; s_menuSel=0; s_scroll=0;
 }
 
@@ -480,7 +628,20 @@ void appDetectorLoop() {
         if (s_state == DetState::THREAT_DONE) s_dirty = true;
     }
 
-    // Live monitoring modes — update on timer, check keys
+    // BLE spam live monitor
+    if (s_state==DetState::BLE_SPAM) {
+        if (millis()-s_spamWinStart >= 5000) {
+            if (s_spamAppleWin > s_spamApplePeak) s_spamApplePeak = s_spamAppleWin;
+            if (s_spamFpWin    > s_spamFpPeak)    s_spamFpPeak    = s_spamFpWin;
+            s_spamAppleWin=0; s_spamFpWin=0;
+            s_spamWinStart=millis();
+        }
+        if (millis()-s_lastRedraw > 800) { drawBleSpamMon(); s_lastRedraw=millis(); }
+        auto ev=readKeys();
+        if (ev.changed && ev.back) stopBleSpamMon();
+        return;
+    }
+    // WiFi promiscuous live monitoring modes — update on timer, check keys
     if (s_state==DetState::DEAUTH_MON || s_state==DetState::PROBE_SNIFF) {
         if (millis()-s_lastRedraw > 800) {
             if (s_state==DetState::DEAUTH_MON) drawDeauthMon();
@@ -499,9 +660,10 @@ void appDetectorLoop() {
 
     if (s_dirty) {
         switch (s_state) {
-            case DetState::MAIN_MENU:   drawMainMenu();     break;
+            case DetState::MAIN_MENU:   drawMainMenu();      break;
             case DetState::THREAT_DONE: drawThreatResults(); break;
             case DetState::WIFI_DONE:   drawWifiResults();   break;
+            case DetState::ROGUE_AP:    drawRogueResults();  break;
             default: break;
         }
         s_dirty=false;
@@ -514,11 +676,12 @@ void appDetectorLoop() {
         case DetState::MAIN_MENU:
             if (ev.back)  { shutdownThreatBle(); goHome(); return; }
             if (ev.up   && s_menuSel>0) { s_menuSel--; s_dirty=true; }
-            if (ev.down && s_menuSel<3) { s_menuSel++; s_dirty=true; }
+            if (ev.down && s_menuSel<5) { s_menuSel++; s_dirty=true; }
             if (ev.enter) startMode();
             break;
         case DetState::THREAT_DONE:
         case DetState::WIFI_DONE:
+        case DetState::ROGUE_AP:
             if (ev.back)  { shutdownThreatBle(); s_state=DetState::MAIN_MENU; s_dirty=true; }
             if (ev.up   && s_scroll>0) { s_scroll--; s_dirty=true; }
             if (ev.down)               { s_scroll++; s_dirty=true; }

@@ -61,6 +61,7 @@ static bool requiresSdMode(AppScene scene) {
         case AppScene::PHOTOS:
         case AppScene::VOICE_MEMOS:
         case AppScene::USB_STORAGE:
+        case AppScene::PAYLOADS:
             return true;
         default:
             return false;
@@ -72,7 +73,6 @@ static bool requiresRadioMode(AppScene scene) {
         case AppScene::SSH:
         case AppScene::GPS:
         case AppScene::LORA:
-        case AppScene::PAYLOADS:
         case AppScene::BLE:
         case AppScene::DETECTOR:
         case AppScene::WIFI_TOOLS:
@@ -238,7 +238,7 @@ static void drawModePicker() {
     d.setFont(&fonts::Font0);
     d.setTextSize(2);
     d.setTextColor(C_FG, C_BG);
-    const char* title = "Cardputer OS 2.0";
+    const char* title = "Cardputer OS 2.1";
     d.setCursor((SCREEN_W - (int)strlen(title) * FONT_W * 2) / 2, 8);
     d.print(title);
     d.setTextSize(1);
@@ -387,7 +387,7 @@ void handleBoot() {
         // Version / tagline
         d.setTextSize(1);
         d.setTextColor(C_DIM, C_BG);
-        const char* ver = "v2.0  --  M5Stack Cardputer";
+        const char* ver = "v2.1  --  M5Stack Cardputer";
         int vw = strlen(ver) * FONT_W;
         d.setCursor((SCREEN_W - vw) / 2, 56);
         d.print(ver);
