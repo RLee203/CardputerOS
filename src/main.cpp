@@ -1,5 +1,6 @@
 #include <M5Cardputer.h>
 #include <SPI.h>
+#include <WiFi.h>
 #include "config.h"
 #include "terminal.h"
 #include "profiles.h"
@@ -27,19 +28,98 @@
 #include "app_lock.h"
 #include "app_payloads.h"
 #include "app_ble.h"
+#include "app_detector.h"
+#include "app_wifi.h"
 
 Terminal term;
 
 // ── App state ──────────────────────────────────────────────────────────────
 enum class State {
     BOOT,
+    MODE_PICKER,
+    MODE_SWITCH_PROMPT,
     LOCK_SCREEN,
-    LAUNCHER, APP_SSH, APP_MP3, APP_NOTES, APP_SETTINGS, APP_GAMES, APP_FILES, APP_IR_REMOTE, APP_PHOTOS, APP_VOICE_MEMOS, APP_HID_KEYBOARD, APP_USB_STORAGE, APP_TIMER, APP_GPS, APP_LORA, APP_NFC, APP_PAYLOADS, APP_BLE, APP_PLACEHOLDER
+    LAUNCHER, APP_SSH, APP_MP3, APP_NOTES, APP_SETTINGS, APP_GAMES, APP_FILES, APP_IR_REMOTE, APP_PHOTOS, APP_VOICE_MEMOS, APP_HID_KEYBOARD, APP_USB_STORAGE, APP_TIMER, APP_GPS, APP_LORA, APP_NFC, APP_PAYLOADS, APP_BLE, APP_DETECTOR, APP_WIFI, APP_PLACEHOLDER
 };
 
-static State state            = State::BOOT;
-static bool  dirty            = true;
-static bool  g_sessionUnlocked = false;  // true after correct PIN this boot
+static State state             = State::BOOT;
+static bool  dirty             = true;
+static bool  g_sessionUnlocked = false;
+static bool  g_wifiSuspended   = false;  // true when an SD app suspended WiFi
+static bool  g_wifiWasConnected = false;
+static wifi_mode_t g_wifiPrevMode = WIFI_OFF;
+static DeviceMode g_deviceMode = DeviceMode::RADIO;
+static DeviceMode g_modePickerSel = DeviceMode::RADIO;
+static DeviceMode g_modeSwitchTarget = DeviceMode::RADIO;
+static String g_modeSwitchFeature = "";
+
+static bool requiresSdMode(AppScene scene) {
+    switch (scene) {
+        case AppScene::MP3:
+        case AppScene::GAMES:
+        case AppScene::FILES:
+        case AppScene::PHOTOS:
+        case AppScene::VOICE_MEMOS:
+        case AppScene::USB_STORAGE:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static bool requiresRadioMode(AppScene scene) {
+    switch (scene) {
+        case AppScene::SSH:
+        case AppScene::GPS:
+        case AppScene::LORA:
+        case AppScene::PAYLOADS:
+        case AppScene::BLE:
+        case AppScene::DETECTOR:
+        case AppScene::WIFI_TOOLS:
+            return true;
+        default:
+            return false;
+    }
+}
+
+DeviceMode currentDeviceMode() { return g_deviceMode; }
+bool isSdMode() { return g_deviceMode == DeviceMode::SD; }
+bool isRadioMode() { return g_deviceMode == DeviceMode::RADIO; }
+void setCurrentDeviceMode(DeviceMode mode) {
+    g_deviceMode = mode;
+    settingsSetBootMode(mode);
+}
+
+void requestModeSwitch(DeviceMode targetMode, const char* feature) {
+    g_modeSwitchTarget = targetMode;
+    g_modeSwitchFeature = feature ? feature : "This feature";
+    state = State::MODE_SWITCH_PROMPT;
+    dirty = true;
+}
+
+void suspendWifiForSd() {
+    g_wifiPrevMode = WiFi.getMode();
+    g_wifiWasConnected = (WiFi.status() == WL_CONNECTED);
+    g_wifiSuspended = (g_wifiPrevMode != WIFI_OFF);
+    if (!g_wifiSuspended) return;
+
+    // SD/audio apps are more stable if WiFi is fully dropped before they open.
+    // We intentionally do not auto-resume later; the user can reconnect from
+    // Settings / WiFi Tools when they actually need radio again.
+    WiFi.disconnect(true, true);
+    delay(80);
+    WiFi.mode(WIFI_OFF);
+    delay(220);
+}
+
+void resumeWifiAfterSd() {
+    // Do not auto-restore WiFi when leaving SD-heavy apps. That transition has
+    // been the source of driver failures and SD breakage; reconnect manually
+    // through the WiFi settings/tool flows instead.
+    g_wifiSuspended = false;
+    g_wifiPrevMode = WIFI_OFF;
+    g_wifiWasConnected = false;
+}
 
 static String inputBuf;
 static int    inputCursor = 0;
@@ -49,6 +129,7 @@ static void setState(State s) { state = s; dirty = true; inputBuf = ""; inputCur
 // ── nav.h implementations ──────────────────────────────────────────────────
 
 void goHome() {
+    resumeWifiAfterSd();
     if (settingsLockEnabled() && !g_sessionUnlocked) {
         appLockEnter();
         state = State::LOCK_SCREEN;
@@ -59,6 +140,14 @@ void goHome() {
 }
 
 void launchApp(AppScene scene) {
+    if (requiresSdMode(scene) && !isSdMode()) {
+        requestModeSwitch(DeviceMode::SD, "This app");
+        return;
+    }
+    if (requiresRadioMode(scene) && !isRadioMode()) {
+        requestModeSwitch(DeviceMode::RADIO, "This app");
+        return;
+    }
     switch (scene) {
         case AppScene::SSH:
             appSshEnter();
@@ -128,6 +217,119 @@ void launchApp(AppScene scene) {
             appBleEnter();
             state = State::APP_BLE;
             break;
+        case AppScene::DETECTOR:
+            appDetectorEnter();
+            state = State::APP_DETECTOR;
+            break;
+        case AppScene::WIFI_TOOLS:
+            appWifiEnter();
+            state = State::APP_WIFI;
+            break;
+    }
+}
+
+static const char* modeName(DeviceMode mode) {
+    return mode == DeviceMode::SD ? "SD Mode" : "Radio Mode";
+}
+
+static void drawModePicker() {
+    auto& d = M5Cardputer.Display;
+    d.fillScreen(C_BG);
+    d.setFont(&fonts::Font0);
+    d.setTextSize(2);
+    d.setTextColor(C_FG, C_BG);
+    const char* title = "Cardputer OS 2.0";
+    d.setCursor((SCREEN_W - (int)strlen(title) * FONT_W * 2) / 2, 8);
+    d.print(title);
+    d.setTextSize(1);
+    d.setTextColor(C_DIM, C_BG);
+    const char* sub = "Choose startup mode";
+    d.setCursor((SCREEN_W - (int)strlen(sub) * FONT_W) / 2, 30);
+    d.print(sub);
+
+    for (int i = 0; i < 2; ++i) {
+        DeviceMode mode = (i == 0) ? DeviceMode::SD : DeviceMode::RADIO;
+        bool sel = (g_modePickerSel == mode);
+        int x = 14 + i * 112;
+        int y = 46;
+        uint32_t box = sel ? (mode == DeviceMode::SD ? 0x7A5A00 : 0x114488) : 0x1A1A1A;
+        d.fillRoundRect(x, y, 100, 44, 6, box);
+        d.drawRoundRect(x, y, 100, 44, 6, sel ? 0xFFFFFF : C_DIM);
+        d.setTextColor(0xFFFFFF, box);
+        d.setCursor(x + 22, y + 8);
+        d.print(mode == DeviceMode::SD ? "SD" : "RADIO");
+        d.setTextColor(sel ? 0xFFFFFF : C_DIM, box);
+        d.setCursor(x + 14, y + 24);
+        d.print(mode == DeviceMode::SD ? "MP3 Files Photos" : "WiFi BLE GPS");
+    }
+
+    d.setTextColor(C_DIM, C_BG);
+    d.setCursor(14, 102);
+    d.print("Left/Right = select");
+    d.setCursor(14, 114);
+    d.print("Enter = boot mode");
+}
+
+static void handleModePicker() {
+    if (dirty) {
+        drawModePicker();
+        dirty = false;
+    }
+    auto ev = readKeys();
+    if (!ev.changed) return;
+    if (ev.left || ev.right) {
+        g_modePickerSel = (g_modePickerSel == DeviceMode::SD) ? DeviceMode::RADIO : DeviceMode::SD;
+        dirty = true;
+        return;
+    }
+    if (ev.enter) {
+        setCurrentDeviceMode(g_modePickerSel);
+        goHome();
+        return;
+    }
+}
+
+static void drawModeSwitchPrompt() {
+    auto& d = M5Cardputer.Display;
+    d.fillScreen(C_BG);
+    d.setFont(&fonts::Font0);
+    d.setTextSize(2);
+    d.setTextColor(C_ERROR, C_BG);
+    const char* title = "Mode Switch";
+    d.setCursor((SCREEN_W - (int)strlen(title) * FONT_W * 2) / 2, 10);
+    d.print(title);
+    d.setTextSize(1);
+    d.setTextColor(C_FG, C_BG);
+    d.setCursor(14, 42);
+    d.print(g_modeSwitchFeature.c_str());
+    d.setCursor(14, 54);
+    d.print("needs ");
+    d.print(modeName(g_modeSwitchTarget));
+    d.print(".");
+    d.setCursor(14, 72);
+    d.print("Switch mode and restart?");
+    d.setTextColor(C_DIM, C_BG);
+    d.setCursor(14, 104);
+    d.print("Enter = restart");
+    d.setCursor(14, 116);
+    d.print("fn+bksp = cancel");
+}
+
+static void handleModeSwitchPrompt() {
+    if (dirty) {
+        drawModeSwitchPrompt();
+        dirty = false;
+    }
+    auto ev = readKeys();
+    if (!ev.changed) return;
+    if (ev.back) {
+        goHome();
+        return;
+    }
+    if (ev.enter) {
+        settingsSetBootMode(g_modeSwitchTarget);
+        delay(80);
+        ESP.restart();
     }
 }
 
@@ -185,7 +387,7 @@ void handleBoot() {
         // Version / tagline
         d.setTextSize(1);
         d.setTextColor(C_DIM, C_BG);
-        const char* ver = "v1.9  --  M5Stack Cardputer";
+        const char* ver = "v2.0  --  M5Stack Cardputer";
         int vw = strlen(ver) * FONT_W;
         d.setCursor((SCREEN_W - vw) / 2, 56);
         d.print(ver);
@@ -214,7 +416,9 @@ void handleBoot() {
     }
 
     if (bootLine >= BOOT_LINES && millis() - bootStart > 1500) {
-        goHome();   // always launch offline — connect via Settings > WiFi
+        g_modePickerSel = settingsBootMode();
+        state = State::MODE_PICKER;
+        dirty = true;
     }
 }
 
@@ -240,6 +444,8 @@ void setup() {
 void loop() {
     switch (state) {
         case State::BOOT:         handleBoot();        break;
+        case State::MODE_PICKER:  handleModePicker();  break;
+        case State::MODE_SWITCH_PROMPT: handleModeSwitchPrompt(); break;
         case State::LOCK_SCREEN:
             appLockLoop();
             if (appLockIsUnlocked()) {
@@ -267,6 +473,8 @@ void loop() {
         case State::APP_NFC:       appNfcLoop();       break;
         case State::APP_PAYLOADS:  appPayloadsLoop();  break;
         case State::APP_BLE:       appBleLoop();       break;
+        case State::APP_DETECTOR:  appDetectorLoop();  break;
+        case State::APP_WIFI:       appWifiLoop();      break;
         case State::APP_PLACEHOLDER: appPlaceholderLoop(); break;
     }
 

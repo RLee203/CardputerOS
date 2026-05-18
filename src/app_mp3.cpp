@@ -7,7 +7,11 @@
 #include <SD.h>
 #include <Audio.h>
 
-static Audio    audio;
+void audio_info(const char* info) {
+    Serial.printf("[MP3] %s\n", info ? info : "(null)");
+}
+
+static Audio*   audio      = nullptr;
 static String   mp3Files[64];
 static int      mp3Count   = 0;
 static int      mp3Sel     = 0;
@@ -15,8 +19,15 @@ static bool     mp3Playing = false;
 static bool     mp3Paused  = false;
 static bool     sdOk       = false;
 static uint8_t  mp3Vol     = 12;    // 0-21
+static unsigned long mp3StartMs = 0;
+static String   mp3StatusMsg;
 
-void audio_eof_mp3(const char* /*info*/) {}
+static void destroyAudio() {
+    if (audio) {
+        delete audio;
+        audio = nullptr;
+    }
+}
 
 static void drawMp3Status() {
     auto& d = M5Cardputer.Display;
@@ -75,6 +86,9 @@ static void drawList() {
         if ((int)line.length() > 38) line = line.substring(0, 36) + "..";
         d.setTextColor(mp3Playing ? (uint32_t)C_INPUT : (uint32_t)C_DIM, C_BG);
         d.print(line.c_str());
+    } else if (mp3StatusMsg.length()) {
+        d.setTextColor(C_ERROR, C_BG);
+        d.print(mp3StatusMsg.c_str());
     } else {
         d.setTextColor(C_DIM, C_BG);
         d.print("Ent=Play  +/-=Vol  bksp=Home");
@@ -83,21 +97,51 @@ static void drawList() {
 
 static void stopPlayback() {
     if (mp3Playing || mp3Paused) {
-        audio.stopSong();
+        if (audio) {
+            audio->stopSong();
+        }
         mp3Playing = false;
         mp3Paused  = false;
     }
+    destroyAudio();
     M5Cardputer.Speaker.begin();
 }
 
 static void startPlayback() {
     if (mp3Count == 0) return;
+    mp3StatusMsg = "";
     stopPlayback();
     M5Cardputer.Speaker.end();
-    audio.setPinout(I2S_BCLK_PIN, I2S_LRCLK_PIN, I2S_DOUT_PIN);
-    audio.setVolume(mp3Vol);
-    String path = "/" + mp3Files[mp3Sel];
-    audio.connecttoFS(SD, path.c_str());
+    destroyAudio();
+    audio = new Audio();
+    if (!audio) {
+        mp3StatusMsg = "Audio alloc failed";
+        M5Cardputer.Speaker.begin();
+        drawMp3Status();
+        drawList();
+        return;
+    }
+    audio->setPinout(I2S_BCLK_PIN, I2S_LRCLK_PIN, I2S_DOUT_PIN);
+    audio->setVolume(mp3Vol);
+    String path = mp3Files[mp3Sel];
+    if (path.startsWith("/")) path.remove(0, 1);
+    path = "/" + path;
+    Serial.printf("[MP3] try open: %s\n", path.c_str());
+    mp3StartMs = millis();
+    if (!audio->connecttoSD(path.c_str())) {
+        mp3Playing = false;
+        mp3Paused  = false;
+        mp3StatusMsg = "Open failed";
+        audio->stopSong();
+        destroyAudio();
+        SD.end();
+        delay(20);
+        sdOk = SD.begin(SD_CS_PIN, SPI, 25000000);
+        M5Cardputer.Speaker.begin();
+        drawMp3Status();
+        drawList();
+        return;
+    }
     mp3Playing = true;
     mp3Paused  = false;
     drawMp3Status();
@@ -117,9 +161,14 @@ static void playPrev() {
 }
 
 void appMp3Enter() {
+    suspendWifiForSd();
+    stopPlayback();
     mp3Sel = 0; mp3Playing = false; mp3Paused = false; mp3Count = 0;
+    mp3StatusMsg = "";
     digitalWrite(LORA_NSS_PIN, HIGH);
     digitalWrite(LORA_RST_PIN, LOW);
+    SD.end();
+    delay(40);
     sdOk = SD.begin(SD_CS_PIN, SPI, 25000000);
     if (sdOk) {
         File root = SD.open("/");
@@ -128,6 +177,7 @@ void appMp3Enter() {
             if (!f) break;
             if (!f.isDirectory()) {
                 String name = f.name();
+                if (name.startsWith("/")) name.remove(0, 1);
                 if (name.endsWith(".mp3") || name.endsWith(".MP3"))
                     if (mp3Count < 64) mp3Files[mp3Count++] = name;
             }
@@ -141,16 +191,19 @@ void appMp3Enter() {
 
 void appMp3Loop() {
     if (mp3Playing) {
-        audio.loop();
-        if (!audio.isRunning()) {
-            // Song ended — auto-play next
+        if (audio) {
+            audio->loop();
+        }
+        // Wait 2s before checking isRunning() to avoid false positive at startup.
+        // WiFi is suspended here so SPI is stable — isRunning() is reliable.
+        if (millis() - mp3StartMs > 2000 && (!audio || !audio->isRunning())) {
             mp3Playing = false;
             mp3Paused  = false;
             if (mp3Count > 1) {
                 mp3Sel = (mp3Sel + 1) % mp3Count;
                 startPlayback();
             } else {
-                M5Cardputer.Speaker.begin();
+                stopPlayback();
                 drawMp3Status();
                 drawList();
             }
@@ -162,23 +215,23 @@ void appMp3Loop() {
     if (!ev.changed) return;
 
     // fn+backspace = home (always)
-    if (ev.back) { stopPlayback(); goHome(); return; }
+    if (ev.back) { stopPlayback(); SD.end(); goHome(); return; }
 
     // fn+Q = home (backup)
     if (ev.fnKey) {
         for (char c : ev.chars)
-            if (c == 'q' || c == 'Q') { stopPlayback(); goHome(); return; }
+            if (c == 'q' || c == 'Q') { stopPlayback(); SD.end(); goHome(); return; }
     }
 
     // Volume with + and - (always available, regardless of fn state)
     for (char c : ev.chars) {
         if (c == '+' || c == '=') {
-            if (mp3Vol < 21) { mp3Vol++; if (mp3Playing) audio.setVolume(mp3Vol); }
+            if (mp3Vol < 21) { mp3Vol++; if (mp3Playing && audio) audio->setVolume(mp3Vol); }
             drawMp3Status();
             return;
         }
         if (c == '-') {
-            if (mp3Vol > 0) { mp3Vol--; if (mp3Playing) audio.setVolume(mp3Vol); }
+            if (mp3Vol > 0) { mp3Vol--; if (mp3Playing && audio) audio->setVolume(mp3Vol); }
             drawMp3Status();
             return;
         }
@@ -188,7 +241,9 @@ void appMp3Loop() {
         // Controls while playing or paused
         if (ev.enter) {
             // Pause / Resume
-            audio.pauseResume();
+            if (audio) {
+                audio->pauseResume();
+            }
             mp3Paused  = mp3Playing;   // was playing → now paused
             mp3Playing = !mp3Playing;
             drawMp3Status();

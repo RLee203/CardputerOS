@@ -43,15 +43,35 @@ static const AppEntry APPS[] = {
     { "NFC", 'c', AppScene::NFC, 0x006644 },
     { "Payloads", 'y', AppScene::PAYLOADS, 0x8B0013 },
     { "BLE", 'e', AppScene::BLE, 0x003566 },
+    { "Detector", 'd', AppScene::DETECTOR, 0x005533 },
+    { "WiFi", 'w', AppScene::WIFI_TOOLS, 0x003377 },
 };
 static constexpr int APP_COUNT = (int)(sizeof(APPS) / sizeof(APPS[0]));
+static const int SD_APP_IDS[] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 };
+static const int RADIO_APP_IDS[] = { 0, 4, 12, 13, 14, 15, 16, 17, 18 };
+static constexpr int SD_APP_COUNT = (int)(sizeof(SD_APP_IDS) / sizeof(SD_APP_IDS[0]));
+static constexpr int RADIO_APP_COUNT = (int)(sizeof(RADIO_APP_IDS) / sizeof(RADIO_APP_IDS[0]));
 
 static int selRow = 0, selCol = 0, selPage = 0;
 
 static void drawAll();
 
+static const int* activeAppIds() {
+    return isSdMode() ? SD_APP_IDS : RADIO_APP_IDS;
+}
+
+static int activeAppCount() {
+    return isSdMode() ? SD_APP_COUNT : RADIO_APP_COUNT;
+}
+
+static const AppEntry* appForVisibleIndex(int idx) {
+    int count = activeAppCount();
+    if (idx < 0 || idx >= count) return nullptr;
+    return &APPS[activeAppIds()[idx]];
+}
+
 static int pageCount() {
-    return (APP_COUNT + APPS_PER_PAGE - 1) / APPS_PER_PAGE;
+    return (activeAppCount() + APPS_PER_PAGE - 1) / APPS_PER_PAGE;
 }
 
 static int currentIndex(int row, int col) {
@@ -64,7 +84,7 @@ static int currentIndex() {
 
 static bool pageHasCell(int page, int row, int col) {
     int idx = page * APPS_PER_PAGE + row * NCOLS + col;
-    return idx < APP_COUNT;
+    return idx < activeAppCount();
 }
 
 static void clampSelectionForPage() {
@@ -257,6 +277,31 @@ static void iPayloads(int cx, int cy) {
     d.fillRect(cx - 1, cy - 1, 5, 2, 0xFFFFFF);
 }
 
+static void iWifi(int cx, int cy) {
+    auto& d = M5Cardputer.Display;
+    // WiFi arcs
+    d.drawArc(cx, cy + 4, 14, 12, 210, 330, 0x55AAFF);
+    d.drawArc(cx, cy + 4,  9,  7, 210, 330, 0x55AAFF);
+    d.drawArc(cx, cy + 4,  4,  2, 210, 330, 0x55AAFF);
+    d.fillCircle(cx, cy + 4, 2, 0x55AAFF);
+    // Lightning bolt (attack/tools indicator)
+    d.drawLine(cx + 6, cy - 10, cx + 2, cy - 3, 0xFF8800);
+    d.drawLine(cx + 2, cy - 3,  cx + 6, cy - 3, 0xFF8800);
+    d.drawLine(cx + 6, cy - 3,  cx + 2, cy + 4, 0xFF8800);
+}
+
+static void iDetector(int cx, int cy) {
+    auto& d = M5Cardputer.Display;
+    // Radar sweep: outer arc, mid arc, centre dot
+    d.drawArc(cx, cy, 13, 11, 270, 90, 0xFFFFFF);
+    d.drawArc(cx, cy,  8,  6, 270, 90, 0xFFFFFF);
+    d.fillCircle(cx, cy, 2, 0xFFFFFF);
+    // Sweep line
+    d.drawLine(cx, cy, cx + 11, cy - 7, 0x00FF88);
+    // Signal dot on sweep
+    d.fillCircle(cx + 9, cy - 6, 2, 0xFF3333);
+}
+
 static void iBle(int cx, int cy) {
     auto& d = M5Cardputer.Display;
     // Bluetooth "B-rune" symbol: vertical bar + two right-facing triangles
@@ -281,13 +326,13 @@ static void drawCell(int row, int col) {
     int cw  = CELL_W,      ch  = CELL_H[row];
     auto& d = M5Cardputer.Display;
 
-    if (idx >= APP_COUNT) {
+    const auto* app = appForVisibleIndex(idx);
+    if (!app) {
         d.fillRect(cx0, cy0, cw, ch, LBKG);
         return;
     }
 
-    const auto& app = APPS[idx];
-    uint32_t tc  = app.color;
+    uint32_t tc  = app->color;
     bool     sel = (row == selRow && col == selCol);
 
     d.fillRoundRect(cx0, cy0, cw, ch, 6, tc);
@@ -301,7 +346,8 @@ static void drawCell(int row, int col) {
     d.setFont(&fonts::Font0);
     d.setTextSize(1);
     d.setTextColor(0xFFFFFF, tc);
-    switch (idx) {
+    int appId = activeAppIds()[idx];
+    switch (appId) {
         case 0: iSSH(icx, icy);          break;
         case 1: iMP3(icx, icy);          break;
         case 2: iNotes(icx, icy, tc);    break;
@@ -319,15 +365,17 @@ static void drawCell(int row, int col) {
         case 14: iNfc(icx, icy);          break;
         case 15: iPayloads(icx, icy);    break;
         case 16: iBle(icx, icy);         break;
+        case 17: iDetector(icx, icy);    break;
+        case 18: iWifi(icx, icy);       break;
     }
 
     // Label
     d.setFont(&fonts::Font0);
     d.setTextSize(1);
     d.setTextColor(0xFFFFFF, tc);
-    int lw = strlen(app.label) * FONT_W;
+    int lw = strlen(app->label) * FONT_W;
     d.setCursor(cx0 + (cw - lw) / 2, cy0 + ch - 11);
-    d.print(app.label);
+    d.print(app->label);
 }
 
 // ── Status bar ─────────────────────────────────────────────────────────────
@@ -340,12 +388,17 @@ static void drawStatusBar() {
     d.setTextSize(1);
     d.setTextColor(0xDDDDDD, SBG);
     d.setCursor(2, 3);
-    d.print("Cardputer OS");
+    d.print(isSdMode() ? "SD Mode" : "Radio Mode");
 
-    bool    ok   = (WiFi.status() == WL_CONNECTED);
-    String  info = ok ? WiFi.localIP().toString() : "no wifi";
+    String  info;
+    if (isSdMode()) info = "sd mode";
+    else {
+        bool ok = (WiFi.status() == WL_CONNECTED);
+        info = ok ? WiFi.localIP().toString() : "radio";
+    }
     int     iw   = info.length() * FONT_W;
-    d.setTextColor(ok ? (uint32_t)0x00BBFF : (uint32_t)0x555555, SBG);
+    uint32_t infoCol = isSdMode() ? (uint32_t)0xFFAA00 : ((WiFi.status() == WL_CONNECTED) ? (uint32_t)0x00BBFF : (uint32_t)0x555555);
+    d.setTextColor(infoCol, SBG);
     d.setCursor(SCREEN_W - iw - 2, 3);
     d.print(info.c_str());
     char pageBuf[8];
@@ -409,14 +462,18 @@ void launcherLoop() {
     if (!ev.fnKey) {
         for (char c : ev.chars) {
             char lo = (char)tolower((unsigned char)c);
-            for (int i = 0; i < APP_COUNT; i++)
-                if (APPS[i].hotkey == lo) { launchApp(APPS[i].scene); return; }
+            int count = activeAppCount();
+            for (int i = 0; i < count; i++) {
+                const auto* app = appForVisibleIndex(i);
+                if (app && app->hotkey == lo) { launchApp(app->scene); return; }
+            }
         }
     }
 
     if (ev.enter) {
         int idx = currentIndex();
-        if (idx < APP_COUNT) { launchApp(APPS[idx].scene); return; }
+        const auto* app = appForVisibleIndex(idx);
+        if (app) { launchApp(app->scene); return; }
     }
 
     if (selPage != pp) {

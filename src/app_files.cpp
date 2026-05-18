@@ -157,12 +157,15 @@ static void drawDeleteConfirm() {
 }
 
 void appFilesEnter() {
+    suspendWifiForSd();
     filesScene  = FilesScene::FILE_LIST;
     filesSource = FilesSource::SOURCE_SD;
     filesDirty  = true;
     fileSel     = 0;
     digitalWrite(LORA_NSS_PIN, HIGH);
     digitalWrite(LORA_RST_PIN, LOW);
+    SD.end();
+    delay(40);
     sdOk  = SD.begin(SD_CS_PIN, SPI, 25000000);
     lfsOk = LittleFS.begin(false);
     loadFileList();

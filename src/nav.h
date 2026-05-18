@@ -4,10 +4,18 @@
 #include <utility/power/IP5306_Class.hpp>
 #include "config.h"
 
-enum class AppScene { SSH, MP3, NOTES, SETTINGS, GAMES, FILES, IR_REMOTE, PHOTOS, VOICE_MEMOS, HID_KEYBOARD, USB_STORAGE, TIMER, GPS, LORA, NFC, PAYLOADS, BLE };
+enum class AppScene { SSH, MP3, NOTES, SETTINGS, GAMES, FILES, IR_REMOTE, PHOTOS, VOICE_MEMOS, HID_KEYBOARD, USB_STORAGE, TIMER, GPS, LORA, NFC, PAYLOADS, BLE, DETECTOR, WIFI_TOOLS };
+enum class DeviceMode : uint8_t { SD = 0, RADIO = 1 };
 
 void goHome();
 void launchApp(AppScene scene);
+void suspendWifiForSd();
+void resumeWifiAfterSd();
+DeviceMode currentDeviceMode();
+void setCurrentDeviceMode(DeviceMode mode);
+void requestModeSwitch(DeviceMode targetMode, const char* feature);
+bool isSdMode();
+bool isRadioMode();
 
 inline m5::IP5306_Class g_cardputerBatteryPmic{};
 inline bool g_cardputerBatteryPmicReady = false;

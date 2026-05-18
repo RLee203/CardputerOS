@@ -439,8 +439,11 @@ void playChunk() {
 }
 
 void appVoiceMemosEnter() {
+    suspendWifiForSd();
     digitalWrite(LORA_NSS_PIN, HIGH);
     digitalWrite(LORA_RST_PIN, LOW);
+    SD.end();
+    delay(40);
     sdOk = SD.begin(SD_CS_PIN, SPI, 25000000);
     if (sdOk) ensureStorageDir();
     loadMemoList();

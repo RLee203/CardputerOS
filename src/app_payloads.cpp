@@ -58,6 +58,8 @@ void loadFileList() {
     s_fileCount = 0;
     digitalWrite(LORA_NSS_PIN, HIGH);
     digitalWrite(LORA_RST_PIN, LOW);
+    SD.end();
+    delay(40);
     s_sdOk = SD.begin(SD_CS_PIN, SPI, 25000000);
     if (!s_sdOk) return;
     if (!SD.exists("/payloads")) { SD.mkdir("/payloads"); return; }

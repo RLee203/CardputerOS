@@ -34,6 +34,7 @@ static constexpr int  NUM_SLEEP = 5;
 static int    sleepIdx    = 0;
 static bool   lockEnabled = false;
 static String lockPin     = "1234";
+static DeviceMode bootMode = DeviceMode::RADIO;
 
 static void applyTheme(int idx) {
     const Theme& t = THEMES[idx];
@@ -56,6 +57,7 @@ static void saveSettings() {
     doc["sleep"]        = sleepIdx;
     doc["lockEnabled"]  = lockEnabled;
     doc["lockPin"]      = lockPin;
+    doc["bootMode"]     = (bootMode == DeviceMode::SD) ? "sd" : "radio";
     serializeJson(doc, f);
     f.close();
 }
@@ -71,6 +73,8 @@ void settingsLoadFromFS() {
         sleepIdx    = doc["sleep"]       | 0;
         lockEnabled = doc["lockEnabled"] | false;
         lockPin     = doc["lockPin"]     | String("1234");
+        String mode = doc["bootMode"]    | String("radio");
+        bootMode = (mode == "sd" || mode == "SD") ? DeviceMode::SD : DeviceMode::RADIO;
         if (themeIdx < 0 || themeIdx >= NUM_THEMES) themeIdx = 0;
         if (sleepIdx < 0 || sleepIdx >= NUM_SLEEP)  sleepIdx = 0;
         if (lockPin.length() == 0) lockPin = "1234";
@@ -104,11 +108,10 @@ static const char* HELP_LINES[] = {
     "Enter     Play / Pause",
     "fn+; / .  Prev / Next song",
     "+ / -     Volume up / down",
-    "  [ SETTINGS / WIFI ]",
-    "WiFi: Enter=saved networks",
-    "fn+D=disconnect current",
-    "In networks: Enter=connect",
-    "fn+D=forget  +Scan=add new",
+    "  [ MODES ]",
+    "SD Mode: MP3 Files Photos",
+    "Radio: WiFi BLE GPS LoRa",
+    "Use WiFi app to connect",
     "fn+,//    Brightness - / +",
     "fn+,//    Theme cycle",
 };
@@ -117,14 +120,14 @@ static constexpr int HELP_VISIBLE = 12;
 
 // ── State ─────────────────────────────────────────────────────────────────
 
-enum class SettingsState { MENU, WIFI_NETS, WIFI_SCAN, WIFI_PASSWORD, HELP, LOCK_PIN };
+enum class SettingsState { MENU, HELP, LOCK_PIN };
 
 static SettingsState settState  = SettingsState::MENU;
 static bool          settDirty  = true;
 static int           settSel    = 0;
 static int           helpScroll = 0;
 
-static constexpr int MENU_ITEMS   = 8;   // WiFi, Brightness, Theme, Help, Sleep, About, Lock, PIN
+static constexpr int MENU_ITEMS   = 8;   // Brightness, Theme, Help, Sleep, About, Lock, PIN, Mode
 static constexpr int MENU_ITEM_H  = FONT_H + 4;  // 12px — fits 8 items in available height
 static constexpr int LIST_VISIBLE = 11;
 
@@ -135,30 +138,15 @@ static String lockPinMsg;
 static int    lockPinPhase = 0;  // 0=enter new  1=confirm
 
 static const char* MENU_FOOTER[] = {
-    "Enter=nets  fn+D=disconn",
     "fn+, dim   fn+/ bright",
     "fn+, prev  fn+/ next theme",
     "Enter to open",
     "fn+, prev  fn+/ next timeout",
-    "Cardputer OS v1.6",
+    "Cardputer OS v2.0",
     "Enter to toggle on/off",
     "Enter to set a new PIN",
+    "Enter to switch and restart",
 };
-
-// WiFi networks list state
-static int netSel    = 0;
-static int netScroll = 0;
-
-// WiFi scan state
-static constexpr int MAX_SCAN = 20;
-static String        scanSSID[MAX_SCAN];
-static int           scanCount  = 0;
-static int           scanSel    = 0;
-static int           scanScroll = 0;
-
-// WiFi password state
-static String wifiPassBuf;
-static int    wifiPassCursor = 0;
 
 // ── Draw ──────────────────────────────────────────────────────────────────
 
@@ -191,44 +179,39 @@ static void drawMenu() {
         char buf[48];
         switch (i) {
             case 0: {
-                bool conn = (WiFi.status() == WL_CONNECTED);
-                if (conn) snprintf(buf, sizeof(buf), "WiFi: %s", WiFi.SSID().c_str());
-                else      snprintf(buf, sizeof(buf), "WiFi: %d saved", WifiMgr.netCount());
-                d.print(buf);
-                d.setTextColor(conn ? (uint32_t)0x00CC00 : (uint32_t)C_ERROR, bg);
-                d.setCursor(SCREEN_W - 2 * FONT_W - 4, y + 2);
-                d.print(conn ? "*" : "x");
-                break;
-            }
-            case 1:
                 snprintf(buf, sizeof(buf), "Brightness: %d", brightness);
                 d.print(buf);
                 break;
-            case 2:
+            }
+            case 1:
                 snprintf(buf, sizeof(buf), "Theme: %s", THEMES[themeIdx].name);
                 d.print(buf);
                 break;
-            case 3:
+            case 2:
                 d.print("Key Reference");
                 break;
-            case 4:
+            case 3:
                 snprintf(buf, sizeof(buf), "Sleep: %s", SLEEP_LABELS[sleepIdx]);
                 d.print(buf);
                 break;
-            case 5:
-                d.print("About: Cardputer OS v1.8");
+            case 4:
+                d.print("About: Cardputer OS v2.0");
                 if (sel) {
                     d.setTextColor(C_DIM, bg);
                     d.setCursor(SCREEN_W / 2, y + 2);
                     d.print(WifiMgr.localIP().c_str());
                 }
                 break;
-            case 6:
+            case 5:
                 snprintf(buf, sizeof(buf), "Lock Screen: %s", lockEnabled ? "ON " : "OFF");
                 d.print(buf);
                 break;
-            case 7:
+            case 6:
                 snprintf(buf, sizeof(buf), "Lock PIN: %s", lockPin.length() ? "set" : "---");
+                d.print(buf);
+                break;
+            case 7:
+                snprintf(buf, sizeof(buf), "Mode: %s", isSdMode() ? "SD" : "Radio");
                 d.print(buf);
                 break;
         }
@@ -237,102 +220,6 @@ static void drawMenu() {
     d.setTextColor(C_DIM, C_BG);
     d.setCursor(2, SCREEN_H - FONT_H - 2);
     if (settSel < MENU_ITEMS) d.print(MENU_FOOTER[settSel]);
-}
-
-static void drawWifiNets() {
-    auto& d = M5Cardputer.Display;
-    d.fillScreen(C_BG);
-    drawStatusBar("WiFi Networks");
-    d.setFont(&fonts::Font0);
-    d.setTextSize(1);
-
-    int total = WifiMgr.netCount() + 1;  // saved networks + "+ Scan for new"
-    for (int i = 0; i < LIST_VISIBLE; i++) {
-        int idx = i + netScroll;
-        if (idx >= total) break;
-        bool sel = (idx == netSel);
-        int y = STATUS_H + i * (FONT_H + 2);
-        uint32_t bg = sel ? C_HIGHLIGHT : (uint32_t)C_BG;
-        d.fillRect(0, y, SCREEN_W, FONT_H + 2, bg);
-        d.setTextColor(sel ? (uint32_t)C_INPUT : (uint32_t)C_FG, bg);
-        d.setCursor(4, y + 1);
-
-        if (idx < WifiMgr.netCount()) {
-            d.print(WifiMgr.net(idx).ssid.c_str());
-            // Mark currently connected network
-            if (WiFi.status() == WL_CONNECTED &&
-                WiFi.SSID() == WifiMgr.net(idx).ssid) {
-                d.setTextColor((uint32_t)0x00CC00, bg);
-                d.setCursor(SCREEN_W - 2 * FONT_W - 4, y + 1);
-                d.print("*");
-            }
-        } else {
-            d.setTextColor(sel ? (uint32_t)C_INPUT : (uint32_t)C_DIM, bg);
-            d.print("+ Scan for new network");
-        }
-    }
-
-    d.setTextColor(C_DIM, C_BG);
-    d.setCursor(2, SCREEN_H - FONT_H - 2);
-    if (netSel < WifiMgr.netCount())
-        d.print("Enter=conn  fn+D=forget  bksp=back");
-    else
-        d.print("Enter=scan  bksp=back");
-}
-
-static void drawWifiScan() {
-    auto& d = M5Cardputer.Display;
-    d.fillScreen(C_BG);
-    drawStatusBar("WiFi Scan");
-    d.setFont(&fonts::Font0);
-    d.setTextSize(1);
-
-    if (scanCount == 0) {
-        d.setTextColor(C_DIM, C_BG);
-        d.setCursor(4, STATUS_H + 10);
-        d.print("No networks found.");
-    } else {
-        for (int i = 0; i < LIST_VISIBLE; i++) {
-            int idx = i + scanScroll;
-            if (idx >= scanCount) break;
-            bool sel = (idx == scanSel);
-            int y = STATUS_H + i * (FONT_H + 2);
-            uint32_t bg = sel ? C_HIGHLIGHT : (uint32_t)C_BG;
-            d.fillRect(0, y, SCREEN_W, FONT_H + 2, bg);
-            d.setTextColor(sel ? (uint32_t)C_INPUT : (uint32_t)C_FG, bg);
-            d.setCursor(4, y + 1);
-            d.print(scanSSID[idx].c_str());
-        }
-    }
-    d.setTextColor(C_DIM, C_BG);
-    d.setCursor(2, SCREEN_H - FONT_H - 2);
-    d.print("fn+;/.=nav  Enter=sel  bksp=back");
-}
-
-static void drawWifiPassword() {
-    auto& d = M5Cardputer.Display;
-    d.fillScreen(C_BG);
-    drawStatusBar("WiFi Setup");
-    d.setFont(&fonts::Font0);
-    d.setTextSize(1);
-
-    d.setTextColor(C_FG, C_BG);
-    char buf[64];
-    snprintf(buf, sizeof(buf), "SSID: %.32s", scanSSID[scanSel].c_str());
-    d.setCursor(4, STATUS_H + 6);
-    d.print(buf);
-
-    constexpr int passX = 4 + 6 * FONT_W;   // x after "Pass: "
-    d.setTextColor(C_DIM, C_BG);
-    d.setCursor(4, STATUS_H + 22);
-    d.print("Pass: ");
-    d.setTextColor(C_FG, C_BG);
-    for (char ch : wifiPassBuf) d.print('*');
-    d.fillRect(passX + wifiPassCursor * FONT_W, STATUS_H + 22, FONT_W, FONT_H, C_INPUT);
-
-    d.setTextColor(C_DIM, C_BG);
-    d.setCursor(4, STATUS_H + 40);
-    d.print("Enter=connect  bksp=back");
 }
 
 static void drawHelp() {
@@ -355,29 +242,6 @@ static void drawHelp() {
     d.print("fn+;/.=scroll   fn+bksp=back");
 }
 
-// ── Scan helper (shared by menu WiFi Enter and WIFI_NETS scan option) ─────
-
-static void doScan() {
-    auto& d = M5Cardputer.Display;
-    d.fillScreen(C_BG);
-    drawStatusBar("WiFi Scan");
-    d.setFont(&fonts::Font0);
-    d.setTextSize(1);
-    d.setTextColor(C_FG, C_BG);
-    d.setCursor(4, STATUS_H + 20);
-    d.print("Scanning...");
-    WiFi.mode(WIFI_STA);
-    int n = WiFi.scanNetworks();
-    scanCount = 0;
-    if (n > 0) {
-        scanCount = (n > MAX_SCAN) ? MAX_SCAN : n;
-        for (int i = 0; i < scanCount; i++) scanSSID[i] = WiFi.SSID(i);
-        WiFi.scanDelete();
-    }
-    scanSel    = 0;
-    scanScroll = 0;
-}
-
 // ── Handlers ──────────────────────────────────────────────────────────────
 
 static void handleMenu() {
@@ -392,28 +256,23 @@ static void handleMenu() {
     if (ev.fnKey) {
         for (char c : ev.chars) {
             if (c == 'q' || c == 'Q') { goHome(); return; }
-            if ((c == 'd' || c == 'D') && settSel == 0) {
-                WifiMgr.disconnect();
-                settDirty = true;
-                return;
-            }
         }
     }
 
     // Brightness: fn+, = dim, fn+/ = bright
-    if (settSel == 1) {
+    if (settSel == 0) {
         if (ev.left)  { brightness = max(10,  brightness - 10); M5Cardputer.Display.setBrightness(brightness); saveSettings(); settDirty = true; }
         if (ev.right) { brightness = min(255, brightness + 10); M5Cardputer.Display.setBrightness(brightness); saveSettings(); settDirty = true; }
     }
 
     // Text Color: fn+, / fn+/ cycles themes
-    if (settSel == 2) {
+    if (settSel == 1) {
         if (ev.left)  { themeIdx = (themeIdx + NUM_THEMES - 1) % NUM_THEMES; applyTheme(themeIdx); saveSettings(); settDirty = true; }
         if (ev.right) { themeIdx = (themeIdx + 1) % NUM_THEMES;              applyTheme(themeIdx); saveSettings(); settDirty = true; }
     }
 
     // Screen Sleep: fn+, / fn+/ cycles timeout options
-    if (settSel == 4) {
+    if (settSel == 3) {
         if (ev.left) {
             sleepIdx = (sleepIdx + NUM_SLEEP - 1) % NUM_SLEEP;
             sleepTimeoutMs = SLEEP_OPTIONS[sleepIdx];
@@ -431,181 +290,24 @@ static void handleMenu() {
     }
 
     if (ev.enter) {
-        if (settSel == 0) {
-            netSel    = 0;
-            netScroll = 0;
-            settState = SettingsState::WIFI_NETS;
-            settDirty = true;
-        } else if (settSel == 3) {
+        if (settSel == 2) {
             helpScroll = 0;
             settState  = SettingsState::HELP;
             settDirty  = true;
-        } else if (settSel == 6) {
+        } else if (settSel == 5) {
             lockEnabled = !lockEnabled;
             saveSettings();
             settDirty = true;
-        } else if (settSel == 7) {
+        } else if (settSel == 6) {
             lockPinBuf   = "";
             lockPinFirst = "";
             lockPinMsg   = "";
             lockPinPhase = 0;
             settState    = SettingsState::LOCK_PIN;
             settDirty    = true;
+        } else if (settSel == 7) {
+            requestModeSwitch(isSdMode() ? DeviceMode::RADIO : DeviceMode::SD, "Switch Mode");
         }
-    }
-}
-
-static void handleWifiNets() {
-    if (settDirty) { drawWifiNets(); settDirty = false; }
-
-    auto ev = readKeys();
-    if (!ev.changed) return;
-
-    if (ev.back) { settState = SettingsState::MENU; settDirty = true; return; }
-
-    int total = WifiMgr.netCount() + 1;
-
-    // fn+D on a saved network = forget it
-    if (ev.fnKey) {
-        for (char c : ev.chars) {
-            if ((c == 'd' || c == 'D') && netSel < WifiMgr.netCount()) {
-                WifiMgr.removeNet(netSel);
-                int newTotal = WifiMgr.netCount() + 1;
-                if (netSel >= newTotal) netSel = newTotal - 1;
-                if (netSel < netScroll) netScroll = netSel;
-                drawWifiNets();
-                return;
-            }
-        }
-    }
-
-    bool nav = false;
-    if (ev.up && netSel > 0) {
-        netSel--;
-        if (netSel < netScroll) netScroll = netSel;
-        nav = true;
-    }
-    if (ev.down && netSel < total - 1) {
-        netSel++;
-        if (netSel >= netScroll + LIST_VISIBLE) netScroll = netSel - LIST_VISIBLE + 1;
-        nav = true;
-    }
-    if (nav) { drawWifiNets(); return; }
-
-    if (ev.enter) {
-        if (netSel < WifiMgr.netCount()) {
-            // Connect to saved network (no password needed)
-            auto& d = M5Cardputer.Display;
-            d.fillScreen(C_BG);
-            drawStatusBar("Connecting...");
-            d.setFont(&fonts::Font0);
-            d.setTextSize(1);
-            d.setTextColor(C_FG, C_BG);
-            char buf[64];
-            snprintf(buf, sizeof(buf), "Connecting to %s", WifiMgr.net(netSel).ssid.c_str());
-            d.setCursor(4, STATUS_H + 20);
-            d.print(buf);
-
-            WifiState r = WifiMgr.connect(netSel);
-            d.setCursor(4, STATUS_H + 36);
-            if (r == WifiState::CONNECTED) {
-                d.setTextColor((uint32_t)0x00CC00, C_BG);
-                snprintf(buf, sizeof(buf), "Connected! %s", WifiMgr.localIP().c_str());
-            } else {
-                d.setTextColor(C_ERROR, C_BG);
-                snprintf(buf, sizeof(buf), "Failed to connect.");
-            }
-            d.print(buf);
-            delay(2000);
-            settDirty = true;
-        } else {
-            // "+ Scan for new network"
-            doScan();
-            settState = SettingsState::WIFI_SCAN;
-            settDirty = true;
-        }
-    }
-}
-
-static void handleWifiScan() {
-    if (settDirty) { drawWifiScan(); settDirty = false; }
-
-    auto ev = readKeys();
-    if (!ev.changed) return;
-
-    if (ev.back) { settState = SettingsState::WIFI_NETS; settDirty = true; return; }
-    if (ev.enter && scanCount > 0) {
-        wifiPassBuf    = "";
-        wifiPassCursor = 0;
-        settState      = SettingsState::WIFI_PASSWORD;
-        settDirty      = true;
-        return;
-    }
-
-    bool nav = false;
-    if (ev.up && scanSel > 0) {
-        scanSel--;
-        if (scanSel < scanScroll) scanScroll = scanSel;
-        nav = true;
-    }
-    if (ev.down && scanSel < scanCount - 1) {
-        scanSel++;
-        if (scanSel >= scanScroll + LIST_VISIBLE) scanScroll = scanSel - LIST_VISIBLE + 1;
-        nav = true;
-    }
-    if (nav) drawWifiScan();
-}
-
-static void handleWifiPassword() {
-    if (settDirty) { drawWifiPassword(); settDirty = false; }
-
-    auto ev = readKeys();
-    if (!ev.changed) return;
-
-    if (ev.back) { settState = SettingsState::WIFI_SCAN; settDirty = true; return; }
-
-    if (ev.del && wifiPassCursor > 0) {
-        wifiPassBuf.remove(wifiPassCursor - 1, 1);
-        wifiPassCursor--;
-        drawWifiPassword();
-        return;
-    }
-
-    if (!ev.fnKey) {
-        for (char c : ev.chars) {
-            wifiPassBuf = wifiPassBuf.substring(0, wifiPassCursor) + c + wifiPassBuf.substring(wifiPassCursor);
-            wifiPassCursor++;
-        }
-        if (ev.chars.length() > 0) { drawWifiPassword(); return; }
-    }
-
-    if (ev.enter) {
-        auto& d = M5Cardputer.Display;
-        d.fillScreen(C_BG);
-        drawStatusBar("Connecting...");
-        d.setFont(&fonts::Font0);
-        d.setTextSize(1);
-        d.setTextColor(C_FG, C_BG);
-        char buf[64];
-        snprintf(buf, sizeof(buf), "Connecting to %s", scanSSID[scanSel].c_str());
-        d.setCursor(4, STATUS_H + 20);
-        d.print(buf);
-
-        WifiState r = WifiMgr.connect(scanSSID[scanSel], wifiPassBuf);
-
-        d.setCursor(4, STATUS_H + 36);
-        if (r == WifiState::CONNECTED) {
-            d.setTextColor((uint32_t)0x00CC00, C_BG);
-            WifiMgr.addNet(scanSSID[scanSel], wifiPassBuf);  // save on success only
-            snprintf(buf, sizeof(buf), "Saved! IP: %s", WifiMgr.localIP().c_str());
-        } else {
-            d.setTextColor(C_ERROR, C_BG);
-            snprintf(buf, sizeof(buf), "Failed to connect.");
-        }
-        d.print(buf);
-        delay(2000);
-        settState = SettingsState::WIFI_NETS;
-        settDirty = true;
     }
 }
 
@@ -740,9 +442,6 @@ void appSettingsEnter() {
 void appSettingsLoop() {
     switch (settState) {
         case SettingsState::MENU:          handleMenu();          break;
-        case SettingsState::WIFI_NETS:     handleWifiNets();      break;
-        case SettingsState::WIFI_SCAN:     handleWifiScan();      break;
-        case SettingsState::WIFI_PASSWORD: handleWifiPassword();  break;
         case SettingsState::HELP:          handleHelp();          break;
         case SettingsState::LOCK_PIN:      handleLockPin();       break;
     }
@@ -750,3 +449,8 @@ void appSettingsLoop() {
 
 bool settingsLockEnabled() { return lockEnabled; }
 const String& settingsLockPin() { return lockPin; }
+DeviceMode settingsBootMode() { return bootMode; }
+void settingsSetBootMode(DeviceMode mode) {
+    bootMode = mode;
+    saveSettings();
+}

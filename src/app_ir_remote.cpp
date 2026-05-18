@@ -11,7 +11,7 @@
 #include <IRremote.hpp>
 
 namespace {
-enum class IrScene { LIST, LEARN_WAIT, LEARN_NAME, DELETE_CONFIRM };
+enum class IrScene { LIST, LEARN_WAIT, LEARN_NAME, DELETE_CONFIRM, TVBGONE };
 enum class IrCodeKind : uint8_t { Decoded = 0, Raw = 1 };
 
 struct IrCode {
@@ -186,26 +186,28 @@ void drawList() {
     d.setFont(&fonts::Font0);
     d.setTextSize(1);
     int y = STATUS_H + 4;
-    if (codeCount == 0) {
-        d.setTextColor(C_DIM, C_BG);
-        d.setCursor(4, y);
-        d.print("No saved IR codes yet.");
-        d.setCursor(4, y + 12);
-        d.print("Tab=learn  Enter=send");
-    } else {
-        int start = (selected >= 9) ? selected - 8 : 0;
-        for (int i = 0; i < 9 && i + start < codeCount; ++i) {
-            int idx = i + start;
-            bool sel = idx == selected;
-            uint32_t bg = sel ? C_HIGHLIGHT : C_BG;
-            d.fillRect(0, y - 1, SCREEN_W, FONT_H + 2, bg);
+    // TV-B-Gone is a virtual item pinned at index codeCount
+    int totalItems = codeCount + 1;
+    int start = (selected >= 9) ? selected - 8 : 0;
+    for (int i = 0; i < 9 && i + start < totalItems; ++i) {
+        int idx = i + start;
+        bool sel = idx == selected;
+        uint32_t bg = sel ? C_HIGHLIGHT : C_BG;
+        d.fillRect(0, y - 1, SCREEN_W, FONT_H + 2, bg);
+        if (idx < codeCount) {
             d.setTextColor(sel ? C_INPUT : C_FG, bg);
             d.setCursor(2, y);
             char line[40];
             snprintf(line, sizeof(line), "%-18s %s", codes[idx].name.c_str(), kindName(codes[idx]));
             d.print(line);
-            y += FONT_H + 3;
+        } else {
+            // TV-B-Gone virtual entry
+            uint32_t tvCol = sel ? (uint32_t)0xFF6600 : (uint32_t)0xFF4400;
+            d.setTextColor(tvCol, bg);
+            d.setCursor(2, y);
+            d.print("[ TV-B-Gone  15 TV power codes ]");
         }
+        y += FONT_H + 3;
     }
     d.setTextColor(C_DIM, C_BG);
     d.fillRect(0, SCREEN_H - 12, SCREEN_W, 12, C_BG);
@@ -216,7 +218,7 @@ void drawList() {
     } else {
         d.setTextColor(C_DIM, C_BG);
         d.setCursor(2, SCREEN_H - FONT_H - 2);
-        d.print("Ent=send Tab=learn fn+D/T");
+        d.print("Ent=send/run  Tab=learn  fn+D=del");
     }
 }
 
@@ -333,6 +335,63 @@ void showListStatus(const String& status, uint32_t durationMs = 1200) {
     listStatus = status;
     listStatusUntilMs = millis() + durationMs;
     if (scene == IrScene::LIST) dirty = true;
+}
+
+struct TvPwrCode { const char* brand; uint8_t proto; uint16_t addr; uint16_t cmd; uint8_t bits; };
+static const TvPwrCode TV_CODES[] = {
+    {"Samsung A",  SAMSUNG,   0x0707, 0x02,  0},
+    {"Samsung B",  SAMSUNG,   0xE0E0, 0x40,  0},
+    {"Sony 12bit", SONY,      0x0001, 0x15, 12},
+    {"Sony 15bit", SONY,      0x0001, 0x15, 15},
+    {"Sony 20bit", SONY,      0x0001, 0x95, 20},
+    {"LG",         LG,        0x0000, 0xC0,  0},
+    {"Panasonic",  PANASONIC, 0x2002, 0x3D,  0},
+    {"Vizio",      NEC,       0x0004, 0x00,  0},
+    {"TCL",        NEC,       0x0002, 0x09,  0},
+    {"Hisense",    NEC,       0x0000, 0x08,  0},
+    {"Toshiba",    NEC,       0x0002, 0x01,  0},
+    {"JVC",        JVC,       0x00C5, 0x00,  0},
+    {"Sharp",      NEC,       0x0002, 0x08,  0},
+    {"Philips A",  NEC,       0x0000, 0x0C,  0},
+    {"Philips B",  NEC,       0x0008, 0x0C,  0},
+};
+static constexpr int N_TV_CODES = (int)(sizeof(TV_CODES)/sizeof(TV_CODES[0]));
+
+void runTvBGone() {
+    auto& d = M5Cardputer.Display;
+    for (int i = 0; i < N_TV_CODES; i++) {
+        d.fillScreen(C_BG);
+        drawHeader("TV-B-Gone");
+        d.setFont(&fonts::Font0); d.setTextSize(2); d.setTextColor(C_FG, C_BG);
+        d.setCursor(4, 22); d.print(TV_CODES[i].brand);
+        d.setTextSize(1); d.setTextColor(C_DIM, C_BG);
+        char prog[20]; snprintf(prog, sizeof(prog), "%d / %d", i+1, N_TV_CODES);
+        d.setCursor(4, 50); d.print(prog);
+        int bw = (SCREEN_W-8) * (i+1) / N_TV_CODES;
+        d.drawRect(4, 62, SCREEN_W-8, 8, C_DIM);
+        if (bw > 2) d.fillRect(5, 63, bw-2, 6, 0x00AAFF);
+        d.setCursor(4, SCREEN_H-10); d.print("fn+bksp to cancel");
+
+        const auto& c = TV_CODES[i];
+        switch (c.proto) {
+            case NEC:       IrSender.sendNEC(c.addr, c.cmd, 3); break;
+            case SONY:      IrSender.sendSony(c.addr, c.cmd, 3, c.bits ? c.bits : 12); break;
+            case SAMSUNG:   IrSender.sendSamsung(c.addr, c.cmd, 3); break;
+            case LG:        IrSender.sendLG(c.addr, c.cmd, 3); break;
+            case JVC:       IrSender.sendJVC((uint8_t)c.addr, (uint8_t)c.cmd, 3); break;
+            case PANASONIC: IrSender.sendPanasonic(c.addr, c.cmd, 3); break;
+            default: break;
+        }
+        delay(350);
+        auto ev = readKeys();
+        if (ev.changed && ev.back) return;
+    }
+    d.fillScreen(C_BG);
+    drawHeader("TV-B-Gone");
+    d.setFont(&fonts::Font0); d.setTextSize(2); d.setTextColor(0x00CC44, C_BG);
+    const char* done = "Done!";
+    d.setCursor((SCREEN_W-(int)strlen(done)*FONT_W*2)/2, 50); d.print(done);
+    delay(1200);
 }
 
 void resetRawCapture() {
@@ -487,7 +546,7 @@ void appIrRemoteLoop() {
     switch (scene) {
         case IrScene::LIST:
             if (ev.up && selected > 0) { selected--; dirty = true; }
-            if (ev.down && selected < codeCount - 1) { selected++; dirty = true; }
+            if (ev.down && selected < codeCount) { selected++; dirty = true; }  // codeCount = TV-B-Gone index
             if (ev.tab) {
                 scene = IrScene::LEARN_WAIT;
                 learnStatus = "Waiting for IR signal...";
@@ -497,20 +556,22 @@ void appIrRemoteLoop() {
                 learnOverlayDirty = true;
                 dirty = true;
             }
-            if (ev.enter && codeCount > 0) {
-                sendCode(codes[selected]);
-                showListStatus(String("Sent: ") + codes[selected].name);
+            if (ev.enter) {
+                if (selected == codeCount) {
+                    resetRawCapture();
+                    runTvBGone();
+                    dirty = true;
+                } else if (codeCount > 0) {
+                    sendCode(codes[selected]);
+                    showListStatus(String("Sent: ") + codes[selected].name);
+                }
             }
             if (ev.fnKey) {
                 for (char c : ev.chars) {
-                    if ((c == 'd' || c == 'D') && codeCount > 0) {
+                    if ((c == 'd' || c == 'D') && codeCount > 0 && selected < codeCount) {
                         deleteTarget = selected;
                         scene = IrScene::DELETE_CONFIRM;
                         dirty = true;
-                    }
-                    if (c == 't' || c == 'T') {
-                        sendTestNec();
-                        showListStatus("Sent NEC test");
                     }
                     if (c == 'q' || c == 'Q') goHome();
                 }

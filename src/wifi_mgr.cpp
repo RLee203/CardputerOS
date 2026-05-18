@@ -65,6 +65,9 @@ WifiState WifiManager::connect(int idx) {
 }
 
 WifiState WifiManager::connect(const String& ssid, const String& pass) {
+    WiFi.persistent(false);
+    WiFi.disconnect(true, true);
+    delay(120);
     WiFi.mode(WIFI_STA);
     WiFi.begin(ssid.c_str(), pass.c_str());
     unsigned long t = millis();
@@ -103,7 +106,7 @@ void WifiManager::removeNet(int idx) {
 }
 
 void WifiManager::disconnect() {
-    WiFi.disconnect(false);
+    WiFi.disconnect(true, true);
 }
 
 WifiState WifiManager::state() const {

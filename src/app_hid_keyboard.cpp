@@ -188,10 +188,14 @@ void appHidKeyboardLoop() {
         auto& d = M5Cardputer.Display;
         d.setFont(&fonts::Font0);
         d.setTextSize(1);
+        d.fillScreen(C_BG);
+        d.setTextColor(C_FG, C_BG);
+        d.setCursor(14, 40);
+        d.print("Restarting device...");
         d.setTextColor(C_DIM, C_BG);
-        d.setCursor(14, SCREEN_H - 20);
-        d.print("Restarting to restore USB...");
-        delay(1200);
+        d.setCursor(14, 54);
+        d.print("(needed to restore USB CDC)");
+        delay(2000);
         ESP.restart();
         return;
     }

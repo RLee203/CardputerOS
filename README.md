@@ -2,36 +2,41 @@
 
 CardputerOS is a multi-app firmware for the **M5Stack Cardputer** built with PlatformIO and Arduino.
 
-## Highlights
+## CardputerOS 2.0
 
-- Multi-page launcher with page wrap navigation
+`2.0` splits the firmware into two cleaner boot modes instead of forcing fragile live handoffs:
+
+- `SD Mode`: MP3, Files, Photos, Games, Voice Memos, IR, USB Storage, Timer, HID Keyboard
+- `Radio Mode`: WiFi, BLE, Detector, SSH, GPS, LoRa, NFC, Payloads
+
+Switching between modes uses a restart prompt so SD/audio apps and radio apps do not fight over memory and device state.
+
+## Feature Highlights
+
+- Mode-aware launcher with restart-based `SD Mode` / `Radio Mode`
 - SSH terminal over WiFi
 - MP3 player from microSD
 - Notes on internal flash
 - Voice Memos with record, playback, delete, and volume control
 - IR Remote with learn, save, delete, and resend
 - Photos viewer for microSD images
-- USB HID Keyboard / Rubber Ducky payloads over USB-C
+- USB HID Keyboard and Rubber Ducky payload support over USB-C
 - USB Storage mode for sharing the microSD card over USB-C
 - Timer with presets, manual keypad entry, and Stopwatch mode
 - GPS status, tracker, and wardriving tools for the LoRa/GNSS cap
 - Basic LoRa raw-text chat for the LoRa/GNSS cap
 - File Manager for SD and internal flash
 - Game Boy emulator support
-- BLE scanner with live device list and SD wardriving log
-- Payloads (DuckyScript / Rubber Ducky USB HID injection from SD card)
+- BLE scanner, Threat Detector, NFC tools, and USB device testing
 
-## Current App Pages
+## Launcher Layout
 
-### Page 1
-- SSH
+### SD Mode
 - MP3
 - Notes
 - Games
 - Settings
 - Files
-
-### Page 2
 - IR Remote
 - Photos
 - Voice Memos
@@ -39,12 +44,17 @@ CardputerOS is a multi-app firmware for the **M5Stack Cardputer** built with Pla
 - USB Storage
 - Timer
 
-### Page 3
+### Radio Mode
+- SSH
+- Settings
 - GPS
 - LoRa
 - NFC
 - Payloads
 - BLE
+- Detector
+- WiFi
+- USB Test
 
 ## Supported Files
 
@@ -64,7 +74,7 @@ CardputerOS is a multi-app firmware for the **M5Stack Cardputer** built with Pla
 ## Quick Controls
 
 - `fn + backspace`: back / home
-- `Tab`: switch pages or app mode where supported
+- `Tab`: switch app mode where supported
 - `Enter`: select / start / pause in most apps
 - `Del`: reset or delete where supported
 
@@ -100,25 +110,14 @@ CardputerOS is a multi-app firmware for the **M5Stack Cardputer** built with Pla
 - `Del`: backspace input
 - `fn + D`: clear message log
 
-### NFC
-- `fn + ; / .`: navigate menu
-- `Enter`: select mode / start scan
-- `Bksp`: back / home
-- **Scan**: detect and display tag UID, type, SAK, and NDEF URI
-- **Read**: full memory dump saved to microSD `/nfc/`
-- **Clone**: copy source tag to a blank writable tag
-- **Write NDEF**: write a URL or URI to an NTAG tag
-- **Emulate**: spoof a scanned or loaded tag UID to a reader (UID-only; readers that require full MIFARE sector auth will show auth failed — normal)
-- **Load**: browse and load saved dumps from microSD for Clone or Emulate
-
 ## Flashing
 
 ### Prebuilt
 
-Download `cardputer-os-v1.9-merged.bin` from the [Releases](../../releases) page and flash:
+Download `cardputer-os-v2.0-merged.bin` from the [Releases](../../releases) page and flash:
 
 ```bash
-esptool.py --chip esp32s3 --port YOUR_PORT write_flash 0x0 cardputer-os-v1.9-merged.bin
+esptool.py --chip esp32s3 --port YOUR_PORT write_flash 0x0 cardputer-os-v2.0-merged.bin
 ```
 
 ### Build From Source
@@ -132,11 +131,10 @@ pio run --target upload
 ## Hardware Notes
 
 - **Device:** M5Stack Cardputer
-- **microSD:** required for MP3, Photos, Voice Memos, and Game Boy
-- **WiFi:** required for SSH
+- **microSD:** required for MP3, Photos, Voice Memos, Games, GPS logs, wardriving logs, payloads, and NFC dumps
 - **External IR receiver:** optional, only needed for learning new IR codes
-- **LoRa/GNSS Cap:** required for the GPS and LoRa apps
-- **NFC Module (PN532):** required for the NFC app — connect via Grove on the LoRa cap (G8=SDA, G9=SCL, 3.3V, GND)
+- **LoRa/GNSS Cap:** required for GPS and LoRa apps
+- **NFC Module (PN532):** required for the NFC app — connect via Grove on the LoRa cap (`G8=SDA`, `G9=SCL`, `3.3V`, `GND`)
 
 ### IR Receiver Wiring
 
@@ -150,53 +148,18 @@ Tested module wiring:
 - red -> `VCC`
 - white -> `OUT`
 
-## v1.9
+## 2.0 Notes
 
-- Added Payloads app — run DuckyScript `.txt`/`.ds` files from microSD over USB HID (Rubber Ducky style)
-- Added BLE Scanner app — real-time BLE device scan with RSSI list and SD wardriving log (`/ble/scan_XXXX.csv`)
-- Fixed SD card failing to mount in all apps when the LoRa/GNSS cap is attached — LoRa SPI pins are now asserted before every SD.begin() across all apps
-- Fixed LoRa app leaving SX1262 chip active on exit, which blocked SD access in subsequent apps
-- Fixed BLE wardriving back key — scan loop now runs in 1-second chunks so key presses are always caught
-
-## v1.8
-
-- Added full NFC app replacing the placeholder: Scan, Read (full dump to SD), Clone, Write NDEF, Emulate, and Load from SD
-- NFC Emulate spoofs UID/ATQA/SAK to a reader using TgInitAsTarget; ATQA is captured from the live scan and saved in dump files so Load → Emulate uses the correct values
-- Fixed NFC emulate freezing after a reader scans — TgRelease is now sent to cleanly end the RF session before re-arming
-- Fixed NFC app freezing on back-to-home — Wire1 is initialized once and never deinitialized (Wire1.end() deadlocks the ESP32 I2C peripheral when no slave responds)
-- Added PIN lock screen with configurable PIN via Settings — lock activates at boot and clears for the session once unlocked
-- Added PIN confirmation (enter twice) when setting a new PIN in Settings
-
-## v1.7
-
-- Fixed SD card failing to mount when the LoRa/GNSS cap is attached — LoRa chip CS pin is now forced HIGH at boot so it does not collide with the SD card on the shared SPI bus
-- Fixed LoRa app breaking SD card for all other apps on first open (removed mid-session SPI reinitialization)
-- Fixed wardriving not scanning any networks — WiFi radio is now fully reset before each session, and scans run without requiring a GPS fix
-- Added NFC placeholder on launcher page 3
-
-## v1.6
-
-- Added a working GPS app with `Status`, `Tracker`, and `Wardriving` modes
-- Added GPX track logging and CSV wardriving logs to `/gps` on the SD card
-- Added a working first-pass LoRa raw-text chat app for the LoRa/GNSS cap
-- Promoted GPS and LoRa from placeholders to real app functionality
-
-## v1.5
-
-- Added working USB Storage over USB-C
-- Added working Timer and Stopwatch
-- Hid unused launcher slots on partial pages
-- Kept the working IR Remote, Photos, Voice Memos, and HID Keyboard feature set
-
-## Future Ideas
-
-- ESP-NOW text messaging
-- TV-B-Gone style IR utility
+- Added split boot modes: `SD Mode` and `Radio Mode`
+- Added mode-aware launcher and restart prompts when switching between incompatible app groups
+- Moved WiFi connection flow into the dedicated WiFi app
+- Cleaned up BLE / Detector / WiFi radio handoff to avoid the no-memory reboots seen with live stack overlap
+- Fixed MP3 causing SD apps to lose mount state after playback by fully tearing down the audio object on exit
 
 ## Credits
 
 - [Launcher](https://github.com/bmorcelli/Launcher) helped inspire the USB storage app flow and status presentation
-- [Bruce Firmware](https://github.com/pr3y/Bruce) helped inform parts of the IR learn/save/replay direction
+- [Bruce Firmware](https://github.com/pr3y/Bruce) helped inform parts of the IR learn/save/replay and GPS/wardriving direction
 
 ## License
 
