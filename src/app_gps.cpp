@@ -56,8 +56,16 @@ String g_lastNmeaLine;
 String g_lineBuf;
 GpsView g_lastDrawnView = GpsView::MENU;
 bool g_staticFrameDirty = true;
+String g_toast;
+uint32_t g_toastUntilMs = 0;
 
 void markDirty() { g_dirty = true; }
+
+void showToast(const String& msg, uint32_t ms = 1400) {
+    g_toast = msg;
+    g_toastUntilMs = millis() + ms;
+    markDirty();
+}
 
 bool ensureGpsStarted() {
     if (g_gpsStarted) return true;
@@ -220,6 +228,7 @@ void startWardriving() {
     g_lastWardriveScanMs = 0;
     g_wardriveRows = 0;
     g_wardriveNetworks = 0;
+    showToast("Logging: " + g_wardriveFile.substring(g_wardriveFile.lastIndexOf('/') + 1));
     markDirty();
 }
 
@@ -481,6 +490,18 @@ void drawWardriving() {
     d.setTextColor(C_DIM, C_BG);
     d.setCursor(14, SCREEN_H - 12);
     d.print("Enter start/stop  Del reset  fn+bksp");
+
+    if (g_toast.length() && millis() < g_toastUntilMs) {
+        int w = SCREEN_W - 24;
+        int h = 22;
+        int x = 12;
+        int y = SCREEN_H - h - 16;
+        d.fillRoundRect(x, y, w, h, 5, 0x002a2a);
+        d.drawRoundRect(x, y, w, h, 5, C_ACCENT);
+        d.setTextColor(C_INPUT, 0x002a2a);
+        d.setCursor(x + 8, y + 7);
+        d.print(g_toast);
+    }
 }
 
 void drawCurrent() {
@@ -607,6 +628,7 @@ void appGpsLoop() {
 
     uint32_t now = millis();
     if (g_dirty || now - g_lastUiUpdate >= 500) {
+        if (g_toast.length() && now >= g_toastUntilMs) g_toast = "";
         drawCurrent();
         g_lastUiUpdate = now;
     }
