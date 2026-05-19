@@ -99,12 +99,6 @@ pio run --target upload
 - Cardputer `5V` -> receiver `VCC`
 - Cardputer `G2` / `GPIO2` -> receiver `OUT`
 
-Tested module wiring:
-
-- black -> `GND`
-- red -> `VCC`
-- white -> `OUT`
-
 ## 2.2 Notes
 
 - Renamed the visible mode labels to `Multimedia` and `Radio`
