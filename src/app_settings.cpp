@@ -35,6 +35,9 @@ static int    sleepIdx    = 0;
 static bool   lockEnabled = false;
 static String lockPin     = "1234";
 static DeviceMode bootMode = DeviceMode::RADIO;
+static int calendarYear = 2026;
+static int calendarMonth = 5;
+static int calendarDay = 19;
 
 static void applyTheme(int idx) {
     const Theme& t = THEMES[idx];
@@ -58,6 +61,9 @@ static void saveSettings() {
     doc["lockEnabled"]  = lockEnabled;
     doc["lockPin"]      = lockPin;
     doc["bootMode"]     = (bootMode == DeviceMode::SD) ? "sd" : "radio";
+    doc["calendarYear"] = calendarYear;
+    doc["calendarMonth"] = calendarMonth;
+    doc["calendarDay"] = calendarDay;
     serializeJson(doc, f);
     f.close();
 }
@@ -74,6 +80,9 @@ void settingsLoadFromFS() {
         lockEnabled = doc["lockEnabled"] | false;
         lockPin     = doc["lockPin"]     | String("1234");
         String mode = doc["bootMode"]    | String("radio");
+        calendarYear = doc["calendarYear"] | 2026;
+        calendarMonth = doc["calendarMonth"] | 5;
+        calendarDay = doc["calendarDay"] | 19;
         bootMode = (mode == "sd" || mode == "SD") ? DeviceMode::SD : DeviceMode::RADIO;
         if (themeIdx < 0 || themeIdx >= NUM_THEMES) themeIdx = 0;
         if (sleepIdx < 0 || sleepIdx >= NUM_SLEEP)  sleepIdx = 0;
@@ -120,33 +129,60 @@ static constexpr int HELP_VISIBLE = 12;
 
 // ── State ─────────────────────────────────────────────────────────────────
 
-enum class SettingsState { MENU, HELP, LOCK_PIN };
+enum class SettingsState { MENU, HELP, LOCK_PIN, CAL_DATE };
 
 static SettingsState settState  = SettingsState::MENU;
 static bool          settDirty  = true;
 static int           settSel    = 0;
 static int           helpScroll = 0;
 
-static constexpr int MENU_ITEMS   = 8;   // Brightness, Theme, Help, Sleep, About, Lock, PIN, Mode
+static constexpr int MENU_ITEMS   = 10;
 static constexpr int MENU_ITEM_H  = FONT_H + 4;  // 12px — fits 8 items in available height
-static constexpr int LIST_VISIBLE = 11;
+static constexpr int LIST_VISIBLE = 8;
 
 // Lock PIN entry state (used within settings)
 static String lockPinBuf;
 static String lockPinFirst;   // stores first entry during confirmation
 static String lockPinMsg;
 static int    lockPinPhase = 0;  // 0=enter new  1=confirm
+static int    calEditField = 0;
+static int    calEditYear = 2026;
+static int    calEditMonth = 5;
+static int    calEditDay = 19;
+
+static int daysInMonthLocal(int year, int month) {
+    static const int mdays[] = { 31,28,31,30,31,30,31,31,30,31,30,31 };
+    if (month == 2) {
+        bool leap = ((year % 4 == 0) && (year % 100 != 0)) || (year % 400 == 0);
+        return leap ? 29 : 28;
+    }
+    return mdays[month - 1];
+}
+
+static void clampCalendarEdit() {
+    if (calEditYear < 1970) calEditYear = 1970;
+    if (calEditYear > 2099) calEditYear = 2099;
+    if (calEditMonth < 1) calEditMonth = 12;
+    if (calEditMonth > 12) calEditMonth = 1;
+    int dim = daysInMonthLocal(calEditYear, calEditMonth);
+    if (calEditDay < 1) calEditDay = dim;
+    if (calEditDay > dim) calEditDay = dim;
+}
 
 static const char* MENU_FOOTER[] = {
     "fn+, dim   fn+/ bright",
     "fn+, prev  fn+/ next theme",
     "Enter to open",
     "fn+, prev  fn+/ next timeout",
-    "Cardputer OS v2.2",
+    "Cardputer OS v2.3",
     "Enter to toggle on/off",
     "Enter to set a new PIN",
     "Enter to switch and restart",
+    "Enter to set calendar date",
+    "Open calendar app",
 };
+
+static void handleCalendarDate();
 
 // ── Draw ──────────────────────────────────────────────────────────────────
 
@@ -158,7 +194,7 @@ static void drawStatusBar(const char* title) {
     d.setTextColor(C_STATUS_FG, C_STATUS_BG);
     d.setCursor(2, 3);
     d.print(title);
-    drawBatteryWidget(C_STATUS_BG);
+    drawBatteryWidget(C_STATUS_BG, SCREEN_W - 43);
 }
 
 static void drawMenu() {
@@ -167,9 +203,12 @@ static void drawMenu() {
     drawStatusBar("Settings");
     d.setFont(&fonts::Font0);
     d.setTextSize(1);
+    int scroll = (settSel >= LIST_VISIBLE) ? (settSel - LIST_VISIBLE + 1) : 0;
 
-    for (int i = 0; i < MENU_ITEMS; i++) {
-        bool sel = (i == settSel);
+    for (int i = 0; i < LIST_VISIBLE; i++) {
+        int item = i + scroll;
+        if (item >= MENU_ITEMS) break;
+        bool sel = (item == settSel);
         int  y   = STATUS_H + 2 + i * MENU_ITEM_H;
         uint32_t bg = sel ? C_HIGHLIGHT : (uint32_t)C_BG;
         d.fillRect(0, y, SCREEN_W, MENU_ITEM_H, bg);
@@ -177,7 +216,7 @@ static void drawMenu() {
         d.setCursor(4, y + 2);
 
         char buf[48];
-        switch (i) {
+        switch (item) {
             case 0: {
                 snprintf(buf, sizeof(buf), "Brightness: %d", brightness);
                 d.print(buf);
@@ -213,6 +252,13 @@ static void drawMenu() {
             case 7:
                 snprintf(buf, sizeof(buf), "Mode: %s", isSdMode() ? "Multimedia" : "Radio");
                 d.print(buf);
+                break;
+            case 8:
+                snprintf(buf, sizeof(buf), "Calendar Date: %04d-%02d-%02d", calendarYear, calendarMonth, calendarDay);
+                d.print(buf);
+                break;
+            case 9:
+                d.print("Open Calendar");
                 break;
         }
     }
@@ -307,6 +353,15 @@ static void handleMenu() {
             settDirty    = true;
         } else if (settSel == 7) {
             requestModeSwitch(isSdMode() ? DeviceMode::RADIO : DeviceMode::SD, "Switch Mode");
+        } else if (settSel == 8) {
+            calEditYear = calendarYear;
+            calEditMonth = calendarMonth;
+            calEditDay = calendarDay;
+            calEditField = 0;
+            settState = SettingsState::CAL_DATE;
+            settDirty = true;
+        } else if (settSel == 9) {
+            launchApp(AppScene::CALENDAR);
         }
     }
 }
@@ -444,6 +499,80 @@ void appSettingsLoop() {
         case SettingsState::MENU:          handleMenu();          break;
         case SettingsState::HELP:          handleHelp();          break;
         case SettingsState::LOCK_PIN:      handleLockPin();       break;
+        case SettingsState::CAL_DATE:      handleCalendarDate();  break;
+    }
+}
+
+static void drawCalendarDate() {
+    auto& d = M5Cardputer.Display;
+    d.fillScreen(C_BG);
+    drawStatusBar("Calendar Date");
+    d.setFont(&fonts::Font0);
+    d.setTextSize(1);
+    d.setTextColor(C_FG, C_BG);
+    d.setCursor(8, STATUS_H + 8);
+    d.print("Set the date used by Calendar:");
+
+    const char* labels[] = { "Year", "Month", "Day" };
+    const int values[] = { calEditYear, calEditMonth, calEditDay };
+    for (int i = 0; i < 3; ++i) {
+        int y = STATUS_H + 28 + i * 16;
+        uint32_t bg = (i == calEditField) ? C_HIGHLIGHT : C_BG;
+        d.fillRect(8, y - 1, SCREEN_W - 16, 12, bg);
+        d.setTextColor((i == calEditField) ? (uint32_t)C_INPUT : (uint32_t)C_FG, bg);
+        char buf[32];
+        if (i == 0) snprintf(buf, sizeof(buf), "%s: %04d", labels[i], values[i]);
+        else snprintf(buf, sizeof(buf), "%s: %02d", labels[i], values[i]);
+        d.setCursor(12, y);
+        d.print(buf);
+    }
+
+    d.setTextColor(C_DIM, C_BG);
+    d.setCursor(8, 108);
+    d.print("fn+,//=field  fn+;/.=change");
+    d.setCursor(8, 120);
+    d.print("Enter=save  bksp=cancel");
+    settDirty = false;
+}
+
+static void handleCalendarDate() {
+    if (settDirty) drawCalendarDate();
+    auto ev = readKeys();
+    if (!ev.changed) return;
+    if (ev.back) {
+        settState = SettingsState::MENU;
+        settDirty = true;
+        return;
+    }
+    if (ev.left) {
+        calEditField = (calEditField + 2) % 3;
+        settDirty = true;
+        return;
+    }
+    if (ev.right) {
+        calEditField = (calEditField + 1) % 3;
+        settDirty = true;
+        return;
+    }
+    if (ev.up || ev.down) {
+        int delta = ev.up ? 1 : -1;
+        switch (calEditField) {
+            case 0: calEditYear += delta; break;
+            case 1: calEditMonth += delta; break;
+            case 2: calEditDay += delta; break;
+        }
+        clampCalendarEdit();
+        settDirty = true;
+        return;
+    }
+    if (ev.enter) {
+        clampCalendarEdit();
+        calendarYear = calEditYear;
+        calendarMonth = calEditMonth;
+        calendarDay = calEditDay;
+        saveSettings();
+        settState = SettingsState::MENU;
+        settDirty = true;
     }
 }
 
@@ -452,5 +581,14 @@ const String& settingsLockPin() { return lockPin; }
 DeviceMode settingsBootMode() { return bootMode; }
 void settingsSetBootMode(DeviceMode mode) {
     bootMode = mode;
+    saveSettings();
+}
+int settingsCalendarYear() { return calendarYear; }
+int settingsCalendarMonth() { return calendarMonth; }
+int settingsCalendarDay() { return calendarDay; }
+void settingsSetCalendarDate(int year, int month, int day) {
+    calendarYear = year;
+    calendarMonth = month;
+    calendarDay = day;
     saveSettings();
 }
