@@ -2,12 +2,12 @@
 
 CardputerOS is a split-mode firmware for the **M5Stack Cardputer** built with PlatformIO and Arduino.
 
-## CardputerOS 2.2
+## CardputerOS 2.3
 
-`2.2` keeps the restart-based mode split that separates local SD/media tools from radio-heavy tools so the Cardputer stays stable.
+`2.3` keeps the restart-based mode split that separates local SD/media tools from radio-heavy tools so the Cardputer stays stable.
 
 - `Multimedia`: MP3, Notes, Games, Files, IR Remote, Photos, Voice Memos, HID Keyboard, USB Storage, Timer, Payloads, Settings
-- `Radio`: SSH, GPS, LoRa, NFC, BLE, Detector, WiFi, CC1101, nRF24, Key Fob, ESP-NOW, Settings
+- `Radio`: SSH, GPS, LoRa, NFC, BLE, Detector, WiFi, CC1101, nRF24, ESP-NOW, Settings
 
 ## Highlights
 
@@ -19,11 +19,14 @@ CardputerOS is a split-mode firmware for the **M5Stack Cardputer** built with Pl
 - LoRa raw text chat for the LoRa/GNSS cap
 - WiFi tools, PMKID capture support, BLE tools, detector / threat scan, and rogue AP scan
 - NFC tools, SSH terminal, and USB device testing
-- Additional radio-side tools for `CC1101`, `nRF24`, `Key Fob`, and `ESP-NOW`
+- Sub-GHz RF capture and replay via `CC1101` (315/433/868/915 MHz + custom frequency)
+- 2.4 GHz spectrum scan, packet sniffer, and Mousejack mode via `nRF24`
+- Device-to-device wireless chat via `ESP-NOW` (no router required)
 
 ## App Layout
 
 ### Multimedia
+
 - MP3
 - Notes
 - Games
@@ -38,6 +41,7 @@ CardputerOS is a split-mode firmware for the **M5Stack Cardputer** built with Pl
 - Settings
 
 ### Radio
+
 - SSH
 - GPS
 - LoRa
@@ -47,7 +51,6 @@ CardputerOS is a split-mode firmware for the **M5Stack Cardputer** built with Pl
 - WiFi
 - CC1101
 - nRF24
-- Key Fob
 - ESP-NOW
 - Settings
 
@@ -70,10 +73,10 @@ CardputerOS is a split-mode firmware for the **M5Stack Cardputer** built with Pl
 
 ### Prebuilt
 
-Download `cardputer-os-v2.2-merged.bin` from the [Releases](../../releases) page and flash:
+Download `cardputer-os-v2.3-merged.bin` from the [Releases](../../releases) page and flash:
 
 ```bash
-esptool.py --chip esp32s3 --port YOUR_PORT write_flash 0x0 cardputer-os-v2.2-merged.bin
+esptool.py --chip esp32s3 --port YOUR_PORT write_flash 0x0 cardputer-os-v2.3-merged.bin
 ```
 
 ### Build From Source
@@ -90,7 +93,7 @@ pio run --target upload
 - **microSD:** required for MP3, Photos, Games, Voice Memos, GPS logs, wardriving logs, payloads, and NFC dumps
 - **External IR receiver:** optional, only needed for learning new IR codes
 - **LoRa/GNSS Cap:** required for GPS and LoRa apps
-- **PINGEQUA CC1101 / nRF24 hat:** supported by the `CC1101`, `nRF24`, and `Key Fob` radio tools
+- **PINGEQUA CC1101 / nRF24 hat:** supported by the `CC1101` and `nRF24` radio tools (SPI: SCK=40, MISO=39, MOSI=14; CS/CE=G6/G4)
 - **NFC Module (PN532):** connect via Grove on the LoRa cap (`G8=SDA`, `G9=SCL`, `3.3V`, `GND`)
 
 ### IR Receiver Wiring
@@ -99,20 +102,22 @@ pio run --target upload
 - Cardputer `5V` -> receiver `VCC`
 - Cardputer `G2` / `GPIO2` -> receiver `OUT`
 
+## 2.3 Notes
+
+- Added `CC1101` sub-GHz RF app: OOK capture, raw replay, spectrum view, custom frequency input
+- Fixed CC1101 PLL calibration bug that prevented 315 MHz reception (bad `setClb` overrides removed)
+- Added `nRF24` 2.4 GHz app: 126-channel spectrum scan, packet sniffer, Mousejack/ESB promiscuous mode
+- Added `ESP-NOW` messenger: broadcast chat between ESP32 devices, no router required
+- Removed `Key Fob` rolling-code analyzer app
+- Removed CC1101 squelch scanner mode
+- `CC1101` and `nRF24` hardware-verified with PINGEQUA module
+
 ## 2.2 Notes
 
 - Renamed the visible mode labels to `Multimedia` and `Radio`
-- Added and wired in `CC1101`, `nRF24`, `Key Fob`, and `ESP-NOW`
 - Moved `Payloads` into `Multimedia`, where it fits the SD + USB workflow better
 - Fixed the list-scroll cursor issue in MP3 and Games
 - Fixed MP3 teardown and playback startup regressions after the newer radio additions
-
-Not fully tested yet:
-
-- `CC1101`
-- `nRF24`
-- `Key Fob`
-- `ESP-NOW`
 
 ## Credits
 
