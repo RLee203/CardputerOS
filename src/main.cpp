@@ -33,6 +33,7 @@
 #include "app_cc1101.h"
 #include "app_nrf24.h"
 #include "app_espnow.h"
+#include "app_sd_health.h"
 
 Terminal term;
 
@@ -42,7 +43,7 @@ enum class State {
     MODE_PICKER,
     MODE_SWITCH_PROMPT,
     LOCK_SCREEN,
-    LAUNCHER, APP_SSH, APP_MP3, APP_NOTES, APP_SETTINGS, APP_GAMES, APP_FILES, APP_IR_REMOTE, APP_PHOTOS, APP_VOICE_MEMOS, APP_HID_KEYBOARD, APP_USB_STORAGE, APP_TIMER, APP_GPS, APP_LORA, APP_NFC, APP_PAYLOADS, APP_BLE, APP_DETECTOR, APP_WIFI, APP_CC1101, APP_NRF24, APP_ESPNOW, APP_PLACEHOLDER
+    LAUNCHER, APP_SSH, APP_MP3, APP_NOTES, APP_SETTINGS, APP_GAMES, APP_FILES, APP_IR_REMOTE, APP_PHOTOS, APP_VOICE_MEMOS, APP_HID_KEYBOARD, APP_USB_STORAGE, APP_TIMER, APP_GPS, APP_LORA, APP_NFC, APP_PAYLOADS, APP_BLE, APP_DETECTOR, APP_WIFI, APP_CC1101, APP_NRF24, APP_ESPNOW, APP_SD_HEALTH, APP_PLACEHOLDER
 };
 
 static State state             = State::BOOT;
@@ -55,6 +56,7 @@ static DeviceMode g_deviceMode = DeviceMode::RADIO;
 static DeviceMode g_modePickerSel = DeviceMode::RADIO;
 static DeviceMode g_modeSwitchTarget = DeviceMode::RADIO;
 static String g_modeSwitchFeature = "";
+static uint32_t g_modePickerReadyAt = 0;
 
 static bool requiresSdMode(AppScene scene) {
     switch (scene) {
@@ -65,6 +67,7 @@ static bool requiresSdMode(AppScene scene) {
         case AppScene::VOICE_MEMOS:
         case AppScene::USB_STORAGE:
         case AppScene::PAYLOADS:
+        case AppScene::SD_HEALTH:
             return true;
         default:
             return false;
@@ -243,6 +246,10 @@ void launchApp(AppScene scene) {
             appEspnowEnter();
             state = State::APP_ESPNOW;
             break;
+        case AppScene::SD_HEALTH:
+            appSdHealthEnter();
+            state = State::APP_SD_HEALTH;
+            break;
     }
 }
 
@@ -290,9 +297,13 @@ static void drawModePicker() {
 
 static void handleModePicker() {
     if (dirty) {
+        resetSleepTimer();
+        M5Cardputer.update();  // flush any boot-time keyboard state before reading picker input
+        g_modePickerReadyAt = millis() + 180;
         drawModePicker();
         dirty = false;
     }
+    if (millis() < g_modePickerReadyAt) return;
     auto ev = readKeys();
     if (!ev.changed) return;
     if (ev.left || ev.right) {
@@ -435,6 +446,7 @@ void handleBoot() {
 
     if (bootLine >= BOOT_LINES && millis() - bootStart > 1500) {
         g_modePickerSel = settingsBootMode();
+        resetSleepTimer();
         state = State::MODE_PICKER;
         dirty = true;
     }
@@ -496,6 +508,7 @@ void loop() {
         case State::APP_CC1101:     appCc1101Loop();    break;
         case State::APP_NRF24:      appNrf24Loop();     break;
         case State::APP_ESPNOW:     appEspnowLoop();    break;
+        case State::APP_SD_HEALTH:  appSdHealthLoop();  break;
         case State::APP_PLACEHOLDER: appPlaceholderLoop(); break;
     }
 

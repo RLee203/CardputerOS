@@ -119,36 +119,36 @@ static void drawSpectrumBars() {
         if (h > BAR_H) h = BAR_H;
         if (s_hits[i] > 0 && h < 2) h = 2;
         int x = SPEC_PAD_X + i * BAR_W;
-        uint32_t col = (h > BAR_H * 2 / 3) ? (uint32_t)0x44F1C1 :
-                       (h > BAR_H / 3)      ? (uint32_t)0x2EAAFF : (uint32_t)0x18507A;
+        uint32_t col = (h > BAR_H * 2 / 3) ? (uint32_t)0xCDE7CD :
+                       (h > BAR_H / 3)      ? (uint32_t)0x8EBA8E : (uint32_t)0x516A51;
         int boty = BAR_Y0 + BAR_H;
         if (h > 0) d.fillRect(x, boty - h, BAR_W, h, col);
-        d.fillRect(x, BAR_Y0, BAR_W, BAR_H - h, 0x071019);
+        d.fillRect(x, BAR_Y0, BAR_W, BAR_H - h, 0x0A0D0A);
     }
 }
 
 static void drawSpectrumHeader() {
     auto& d = M5Cardputer.Display;
-    d.fillRect(0, 0, SCREEN_W, STATUS_H, 0x07111E);
-    d.fillRect(0, STATUS_H, SCREEN_W, SCREEN_H - STATUS_H, 0x03070D);
+    d.fillRect(0, 0, SCREEN_W, STATUS_H, 0x0A0F0A);
+    d.fillRect(0, STATUS_H, SCREEN_W, SCREEN_H - STATUS_H, 0x040604);
     d.setFont(&fonts::Font0); d.setTextSize(1);
-    d.setTextColor(0x4FD9FF, 0x07111E);
+    d.setTextColor(0xCFE9CF, 0x0A0F0A);
     d.setCursor(2, 3);
-    d.print("nRF24  LIVE RF  2.4G");
-    d.setTextColor(0x6B8BA6, 0x07111E);
-    d.setCursor(SCREEN_W - 70, 3);
-    d.print("channel map");
+    d.print("NRF24 SCOPE  2.4G");
+    d.setTextColor(0x6E8B6E, 0x0A0F0A);
+    d.setCursor(SCREEN_W - 54, 3);
+    d.print("live");
 
-    d.drawRoundRect(SPEC_PAD_X, BAR_Y0 - 2, SCREEN_W - SPEC_PAD_X * 2, BAR_H + 4, 5, 0x173B58);
-    d.fillRect(SPEC_PAD_X + 1, BAR_Y0 - 1, SCREEN_W - SPEC_PAD_X * 2 - 2, BAR_H + 2, 0x071019);
+    d.drawRect(SPEC_PAD_X, BAR_Y0 - 2, SCREEN_W - SPEC_PAD_X * 2, BAR_H + 4, 0x4F654F);
+    d.fillRect(SPEC_PAD_X + 1, BAR_Y0 - 1, SCREEN_W - SPEC_PAD_X * 2 - 2, BAR_H + 2, 0x0A0D0A);
 
     for (int gx = 1; gx < 4; ++gx) {
         int x = SPEC_PAD_X + ((SCREEN_W - SPEC_PAD_X * 2) * gx) / 4;
-        d.drawFastVLine(x, BAR_Y0 + 1, BAR_H, 0x102535);
+        d.drawFastVLine(x, BAR_Y0 + 1, BAR_H, 0x1A231A);
     }
-    d.drawFastHLine(SPEC_PAD_X + 2, BAR_Y0 + BAR_H / 2, SCREEN_W - SPEC_PAD_X * 2 - 4, 0x133246);
+    d.drawFastHLine(SPEC_PAD_X + 2, BAR_Y0 + BAR_H / 2, SCREEN_W - SPEC_PAD_X * 2 - 4, 0x314231);
 
-    d.setTextColor(0x3E9BC2, 0x03070D);
+    d.setTextColor(0x8EBA8E, 0x040604);
     d.setCursor(SPEC_PAD_X, LABEL_Y); d.print("2400");
     d.setCursor(SCREEN_W - 34, LABEL_Y); d.print("2525");
 }

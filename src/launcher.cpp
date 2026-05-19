@@ -48,9 +48,10 @@ static const AppEntry APPS[] = {
     { "CC1101", 'q', AppScene::CC1101, 0x553300 },
     { "nRF24",  'z', AppScene::NRF24,  0x003355 },
     { "ESP-NOW", 'i', AppScene::ESPNOW, 0x005566 },
+    { "SD Health", 'k', AppScene::SD_HEALTH, 0x2D6A4F },
 };
 static constexpr int APP_COUNT = (int)(sizeof(APPS) / sizeof(APPS[0]));
-static const int SD_APP_IDS[] = { 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 15, 4 };
+static const int SD_APP_IDS[] = { 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 15, 22, 4 };
 static const int RADIO_APP_IDS[] = { 0, 12, 13, 14, 16, 17, 18, 19, 20, 21, 4 };
 static constexpr int SD_APP_COUNT = (int)(sizeof(SD_APP_IDS) / sizeof(SD_APP_IDS[0]));
 static constexpr int RADIO_APP_COUNT = (int)(sizeof(RADIO_APP_IDS) / sizeof(RADIO_APP_IDS[0]));
@@ -355,6 +356,16 @@ static void iNRF24(int cx, int cy) {
     d.drawFastHLine(cx + 6, cy + 5, 3, 0xFFFFFF);
 }
 
+static void iSdHealth(int cx, int cy) {
+    auto& d = M5Cardputer.Display;
+    d.drawRoundRect(cx - 12, cy - 9, 24, 16, 3, 0xFFFFFF);
+    d.drawFastHLine(cx - 8, cy - 3, 10, 0xFFFFFF);
+    d.drawFastHLine(cx - 8, cy + 1, 8, 0xFFFFFF);
+    d.drawFastHLine(cx - 8, cy + 5, 6, 0xFFFFFF);
+    d.drawCircle(cx + 6, cy + 2, 4, 0x7DFFB2);
+    d.drawLine(cx + 6, cy + 2, cx + 9, cy - 1, 0x7DFFB2);
+}
+
 // ── Cell ───────────────────────────────────────────────────────────────────
 
 static void drawCell(int row, int col) {
@@ -407,6 +418,7 @@ static void drawCell(int row, int col) {
         case 19: iCC1101(icx, icy);      break;
         case 20: iNRF24(icx, icy);       break;
         case 21: iEspNow(icx, icy);      break;
+        case 22: iSdHealth(icx, icy);    break;
     }
 
     // Label

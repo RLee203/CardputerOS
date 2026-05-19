@@ -37,7 +37,7 @@ static constexpr int N_BANDS = 6;
 static constexpr int N_BANDS_PRESET = 5;
 
 // ── State ──────────────────────────────────────────────────────────────────
-enum class CC1101State { MENU, SPECTRUM, CAPTURE, REPLAY, REPLAY_LIST, FREQ_INPUT };
+enum class CC1101State { MENU, SPECTRUM, DETECT, CAPTURE, REPLAY, REPLAY_LIST, FREQ_INPUT };
 static CC1101State s_state = CC1101State::MENU;
 static int s_menuSel = 0;
 static int s_bandSel = 0;
@@ -71,6 +71,11 @@ static uint16_t s_lastPulse = 0;
 static char s_lastProtocol[20] = "RAW(0)";
 static char s_lastSummary[48] = "No code identified";
 static char s_lastCrc[32] = "No code identified";
+static int s_detectRepeats = 0;
+static uint16_t s_detectMinPulse = 0;
+static uint16_t s_detectMaxPulse = 0;
+static uint32_t s_detectBurstUs = 0;
+static char s_detectMod[24] = "OOK / ASK-like";
 static String s_lastSaveFile;
 static String s_replayFiles[32];
 static int s_replayFileCount = 0;
@@ -127,6 +132,11 @@ static void clearCaptureState() {
     s_hasCap = false;
     s_capturing = false;
     s_lastSaveFile = "";
+    s_detectRepeats = 0;
+    s_detectMinPulse = 0;
+    s_detectMaxPulse = 0;
+    s_detectBurstUs = 0;
+    strcpy(s_detectMod, "OOK / ASK-like");
     strcpy(s_lastProtocol, "RAW(0)");
     strcpy(s_lastSummary, "No code identified");
     strcpy(s_lastCrc, "No code identified");
@@ -169,29 +179,30 @@ static void configOokRx(float mhz) {
 static void drawSpectrumFrame() {
     auto& d = M5Cardputer.Display;
     d.fillScreen(C_BG);
-    d.fillRect(0, 0, SCREEN_W, STATUS_H, 0x06111F);
-    d.fillRect(0, STATUS_H, SCREEN_W, SCREEN_H - STATUS_H, 0x03070D);
+    d.fillRect(0, 0, SCREEN_W, STATUS_H, 0x0A0F0A);
+    d.fillRect(0, STATUS_H, SCREEN_W, SCREEN_H - STATUS_H, 0x040604);
     d.setFont(&fonts::Font0);
     d.setTextSize(1);
-    d.setTextColor(0x4FD9FF, 0x06111F);
+    d.setTextColor(0xCFE9CF, 0x0A0F0A);
     d.setCursor(2, 3);
     char hdr[40];
-    snprintf(hdr, sizeof(hdr), "CC1101  LIVE RF  %s", bandName());
+    snprintf(hdr, sizeof(hdr), "CC1101 SCOPE  %s", bandName());
     d.print(hdr);
-    d.setTextColor(0x6B8BA6, 0x06111F);
-    d.setCursor(SCREEN_W - 78, 3);
-    d.print("live burst");
+    d.setTextColor(0x6E8B6E, 0x0A0F0A);
+    d.setCursor(SCREEN_W - 54, 3);
+    d.print("live");
 
-    d.drawRoundRect(SPEC_PAD_X, SPEC_BOX_Y, SCREEN_W - SPEC_PAD_X * 2, SPEC_BOX_H, 5, 0x17435F);
-    d.fillRect(SPEC_PAD_X + 1, SPEC_BOX_Y + 1, SCREEN_W - SPEC_PAD_X * 2 - 2, SPEC_BOX_H - 2, 0x071019);
+    d.drawRect(SPEC_PAD_X, SPEC_BOX_Y, SCREEN_W - SPEC_PAD_X * 2, SPEC_BOX_H, 0x4F654F);
+    d.fillRect(SPEC_PAD_X + 1, SPEC_BOX_Y + 1, SCREEN_W - SPEC_PAD_X * 2 - 2, SPEC_BOX_H - 2, 0x0A0D0A);
 
     int centerY = SPEC_BOX_Y + SPEC_BOX_H / 2;
-    d.drawFastHLine(SPEC_PAD_X + 4, centerY, SCREEN_W - SPEC_PAD_X * 2 - 8, 0x1E5C7A);
-    d.drawFastVLine(SCREEN_W / 4, SPEC_BOX_Y + 4, SPEC_BOX_H - 8, 0x0F2638);
-    d.drawFastVLine(SCREEN_W / 2, SPEC_BOX_Y + 4, SPEC_BOX_H - 8, 0x143447);
-    d.drawFastVLine((SCREEN_W * 3) / 4, SPEC_BOX_Y + 4, SPEC_BOX_H - 8, 0x0F2638);
+    d.drawFastHLine(SPEC_PAD_X + 3, centerY, SCREEN_W - SPEC_PAD_X * 2 - 6, 0x314231);
+    for (int gx = 1; gx < 5; ++gx) {
+        int x = SPEC_PAD_X + ((SCREEN_W - SPEC_PAD_X * 2) * gx) / 5;
+        d.drawFastVLine(x, SPEC_BOX_Y + 3, SPEC_BOX_H - 6, 0x1A231A);
+    }
 
-    d.setTextColor(0x3E9BC2, 0x03070D);
+    d.setTextColor(0x8EBA8E, 0x040604);
     d.setCursor(SPEC_PAD_X, SCREEN_H - 10);
     d.print(String((int)bandMin()) + "M");
     d.setCursor(SCREEN_W - 42, SCREEN_H - 10);
@@ -207,15 +218,16 @@ static void drawSpectrumWaveform() {
     auto& d = M5Cardputer.Display;
     unsigned int* raw = decodedReady ? s_rcswitch.getReceivedRawdata()
                                      : s_rcswitch.getRAWReceivedRawdata();
-    d.fillRect(SPEC_PAD_X + 1, SPEC_BOX_Y + 1, SCREEN_W - SPEC_PAD_X * 2 - 2, SPEC_BOX_H - 2, 0x071019);
+    d.fillRect(SPEC_PAD_X + 1, SPEC_BOX_Y + 1, SCREEN_W - SPEC_PAD_X * 2 - 2, SPEC_BOX_H - 2, 0x0A0D0A);
     int centerY = SPEC_BOX_Y + SPEC_BOX_H / 2;
-    d.drawFastHLine(SPEC_PAD_X + 4, centerY, SCREEN_W - SPEC_PAD_X * 2 - 8, 0x1E5C7A);
-    d.drawFastVLine(SCREEN_W / 4, SPEC_BOX_Y + 4, SPEC_BOX_H - 8, 0x0F2638);
-    d.drawFastVLine(SCREEN_W / 2, SPEC_BOX_Y + 4, SPEC_BOX_H - 8, 0x143447);
-    d.drawFastVLine((SCREEN_W * 3) / 4, SPEC_BOX_Y + 4, SPEC_BOX_H - 8, 0x0F2638);
+    d.drawFastHLine(SPEC_PAD_X + 3, centerY, SCREEN_W - SPEC_PAD_X * 2 - 6, 0x314231);
+    for (int gx = 1; gx < 5; ++gx) {
+        int x = SPEC_PAD_X + ((SCREEN_W - SPEC_PAD_X * 2) * gx) / 5;
+        d.drawFastVLine(x, SPEC_BOX_Y + 3, SPEC_BOX_H - 6, 0x1A231A);
+    }
 
     int lineX = SPEC_PAD_X + 6;
-    int lineY = centerY - 10;
+    int lineY = centerY - 7;
     for (int i = 0; i < RCSWITCH_RAW_MAX_CHANGES - 1; i += 2) {
         if (raw[i] == 0) break;
         unsigned int hi = raw[i] > 20000 ? 20000 : raw[i];
@@ -224,10 +236,10 @@ static void drawSpectrumWaveform() {
         int loW = max(1, (int)(lo / TIME_DIVIDER));
         if (lineX + hiW + loW > SCREEN_W - SPEC_PAD_X - 6) break;
 
-        d.drawFastVLine(lineX, lineY, 8, 0x49E6FF);
-        d.drawFastHLine(lineX, lineY, hiW, 0x49E6FF);
-        d.drawFastVLine(lineX + hiW, lineY, 8, 0x49E6FF);
-        d.drawFastHLine(lineX + hiW, lineY + 8, loW, 0x12C7A0);
+        d.drawFastVLine(lineX, lineY, 6, 0xCDE7CD);
+        d.drawFastHLine(lineX, lineY, hiW, 0xCDE7CD);
+        d.drawFastVLine(lineX + hiW, lineY, 6, 0xCDE7CD);
+        d.drawFastHLine(lineX + hiW, lineY + 6, loW, 0x9FBA9F);
         lineX += hiW + loW;
     }
     s_rcswitch.resetAvailable();
@@ -442,9 +454,22 @@ static void summarizeCapture(bool decoded, uint64_t value, unsigned int* raw) {
     }
     s_lastTransitions = transitions;
     s_edgeCount = min(transitions, MAX_EDGES);
+    s_detectMinPulse = 0xFFFF;
+    s_detectMaxPulse = 0;
+    s_detectBurstUs = 0;
     for (int i = 0; i < s_edgeCount; ++i) {
         s_edges[i] = raw[i] > 65535 ? 65535 : raw[i];
+        if (s_edges[i] > 0) {
+            if (s_edges[i] < s_detectMinPulse) s_detectMinPulse = s_edges[i];
+            if (s_edges[i] > s_detectMaxPulse) s_detectMaxPulse = s_edges[i];
+            s_detectBurstUs += s_edges[i];
+        }
     }
+    if (s_detectMinPulse == 0xFFFF) s_detectMinPulse = 0;
+    s_detectRepeats = (s_lastPulse > 0 && s_detectBurstUs > 0)
+        ? max(1, (int)(s_detectBurstUs / max<uint32_t>(1, s_lastPulse * max<uint16_t>(1, s_lastBitLength))))
+        : 1;
+    strcpy(s_detectMod, decoded ? "OOK / ASK decoded" : "OOK / ASK-like");
 
     if (decoded) {
         snprintf(s_lastProtocol, sizeof(s_lastProtocol), "RcSwitch(%d)", s_rcswitch.getReceivedProtocol());
@@ -505,6 +530,60 @@ static void stopCapture() {
     s_hasCap = (s_lastTransitions >= 20 || s_lastDecoded != 0);
     if (s_hasCap) s_lastSignalCount++;
     s_rcswitch.resetAvailable();
+}
+
+static void drawDetect() {
+    auto& d = M5Cardputer.Display;
+    d.fillScreen(C_BG);
+    d.fillRect(0, 0, SCREEN_W, STATUS_H, 0x112000);
+    d.setFont(&fonts::Font0);
+    d.setTextSize(1);
+    d.setTextColor(0xD8F0A8, 0x112000);
+    d.setCursor(2, 3);
+    char hdr[40];
+    snprintf(hdr, sizeof(hdr), "RF Detect  %.3fMHz", capFreq());
+    d.print(hdr);
+
+    if (s_capturing) {
+        char buf[64];
+        d.setTextColor(C_DIM, C_BG);
+        d.setCursor(8, 26); d.print("Listening for RF burst...");
+        snprintf(buf, sizeof(buf), "Band: %s", bandName());
+        d.setCursor(8, 40); d.print(buf);
+        snprintf(buf, sizeof(buf), "Elapsed: %lus", (millis() - s_captureStart) / 1000);
+        d.setCursor(8, 54); d.print(buf);
+        d.setCursor(8, 118); d.print("Enter=stop  Back=cancel");
+    } else if (s_hasCap) {
+        char buf[72];
+        d.setTextColor(C_FG, C_BG);
+        snprintf(buf, sizeof(buf), "Type: %s", s_detectMod);
+        d.setCursor(8, 20); d.print(buf);
+        snprintf(buf, sizeof(buf), "Protocol: %s", s_lastProtocol);
+        d.setCursor(8, 32); d.print(buf);
+        snprintf(buf, sizeof(buf), "Transitions: %u", (unsigned)s_lastTransitions);
+        d.setCursor(8, 44); d.print(buf);
+        snprintf(buf, sizeof(buf), "Pulse range: %u-%u us", (unsigned)s_detectMinPulse, (unsigned)s_detectMaxPulse);
+        d.setCursor(8, 56); d.print(buf);
+        snprintf(buf, sizeof(buf), "Burst len: %lu us", (unsigned long)s_detectBurstUs);
+        d.setCursor(8, 68); d.print(buf);
+        snprintf(buf, sizeof(buf), "Repeats: %d", s_detectRepeats);
+        d.setCursor(8, 80); d.print(buf);
+        snprintf(buf, sizeof(buf), "Summary: %s", s_lastSummary);
+        d.setCursor(8, 94); d.print(buf);
+        d.setTextColor(C_DIM, C_BG);
+        d.setCursor(8, 118); d.print("Ent=again  Del=clear");
+    } else {
+        char buf[64];
+        d.setTextColor(C_DIM, C_BG);
+        snprintf(buf, sizeof(buf), "Freq: %.3f MHz", capFreq());
+        d.setCursor(8, 34); d.print(buf);
+        d.setCursor(8, 48); d.print("Reports burst timing and type.");
+        d.setTextColor(C_FG, C_BG);
+        d.setCursor(8, 84); d.print("Press Enter to start.");
+        d.setTextColor(C_DIM, C_BG);
+        d.setCursor(8, 118); d.print("Back=return");
+    }
+    drawToast();
 }
 
 static void drawCapture() {
@@ -764,10 +843,10 @@ static void drawFreqInput() {
 }
 
 // ── Menu ───────────────────────────────────────────────────────────────────
-static const char* MENU_LABELS[] = { "Spectrum", "Scan Copy", "Replay", "Band", "Custom Freq" };
-static const char* MENU_DESC[] = { "Live raw waveform", "Capture raw RF", "Retransmit capture", "Select freq band", "Type exact MHz" };
-static const uint32_t MENU_COLS[] = { 0x0066AA, 0x007722, 0xAA6600, 0x660077, 0x556600 };
-static constexpr int N_MENU = 5;
+static const char* MENU_LABELS[] = { "Spectrum", "Detect", "Scan Copy", "Replay", "Band", "Custom Freq" };
+static const char* MENU_DESC[] = { "Live raw waveform", "Analyze RF burst", "Capture raw RF", "Retransmit capture", "Select freq band", "Type exact MHz" };
+static const uint32_t MENU_COLS[] = { 0x0066AA, 0x667700, 0x007722, 0xAA6600, 0x660077, 0x556600 };
+static constexpr int N_MENU = 6;
 static constexpr int CARD_H = 18;
 static constexpr int CARD_GAP = 1;
 
@@ -860,7 +939,7 @@ void appCc1101Loop() {
             if (ev.up && s_menuSel > 0) { s_menuSel--; s_dirty = true; }
             if (ev.down && s_menuSel < N_MENU - 1) { s_menuSel++; s_dirty = true; }
             if (ev.enter) {
-                bool needsHw = (s_menuSel == 0 || s_menuSel == 1 || s_menuSel == 2);
+                bool needsHw = (s_menuSel == 0 || s_menuSel == 1 || s_menuSel == 2 || s_menuSel == 3);
                 if (needsHw && !initChip()) {
                     s_inited = false;
                     drawInitError();
@@ -869,10 +948,11 @@ void appCc1101Loop() {
                 }
                 switch (s_menuSel) {
                     case 0: s_state = CC1101State::SPECTRUM; s_dirty = true; s_specFrameDirty = true; break;
-                    case 1: s_state = CC1101State::CAPTURE; s_dirty = true; break;
-                    case 2: loadReplayFileList(); s_state = CC1101State::REPLAY_LIST; s_dirty = true; break;
-                    case 3: s_bandSel = (s_bandSel >= N_BANDS_PRESET - 1) ? 0 : s_bandSel + 1; s_dirty = true; break;
-                    case 4: s_state = CC1101State::FREQ_INPUT; s_dirty = true; break;
+                    case 1: s_state = CC1101State::DETECT; s_dirty = true; break;
+                    case 2: s_state = CC1101State::CAPTURE; s_dirty = true; break;
+                    case 3: loadReplayFileList(); s_state = CC1101State::REPLAY_LIST; s_dirty = true; break;
+                    case 4: s_bandSel = (s_bandSel >= N_BANDS_PRESET - 1) ? 0 : s_bandSel + 1; s_dirty = true; break;
+                    case 5: s_state = CC1101State::FREQ_INPUT; s_dirty = true; break;
                 }
             }
             if (ev.left || ev.right) {
@@ -913,6 +993,50 @@ void appCc1101Loop() {
                 s_spectrumConfigured = false;
                 s_specFrameDirty = true;
                 s_dirty = true;
+            }
+            break;
+
+        case CC1101State::DETECT:
+            if (s_dirty) {
+                drawDetect();
+                s_dirty = false;
+            }
+            if (s_capturing) {
+                bool timeout = (millis() - s_captureStart > 10000);
+                bool gotSignal = pollCapture();
+                if (gotSignal || timeout) {
+                    stopCapture();
+                    s_dirty = true;
+                    return;
+                }
+                static uint32_t lastDetectRefresh = 0;
+                if (millis() - lastDetectRefresh > 200) {
+                    lastDetectRefresh = millis();
+                    drawDetect();
+                }
+            }
+            if (!ev.changed) return;
+            if (ev.back) {
+                if (s_capturing) stopCapture();
+                disableReceiver();
+                idleChip();
+                s_state = CC1101State::MENU;
+                s_dirty = true;
+                return;
+            }
+            if (ev.del && !s_capturing) {
+                clearCaptureState();
+                s_dirty = true;
+                return;
+            }
+            if (ev.enter) {
+                if (s_capturing) {
+                    stopCapture();
+                    s_dirty = true;
+                } else {
+                    startCapture();
+                    s_dirty = true;
+                }
             }
             break;
 
