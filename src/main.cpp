@@ -57,6 +57,7 @@ static DeviceMode g_modePickerSel = DeviceMode::RADIO;
 static DeviceMode g_modeSwitchTarget = DeviceMode::RADIO;
 static String g_modeSwitchFeature = "";
 static uint32_t g_modePickerReadyAt = 0;
+static bool g_modePickerPrimed = false;
 
 static bool requiresSdMode(AppScene scene) {
     switch (scene) {
@@ -298,12 +299,19 @@ static void drawModePicker() {
 static void handleModePicker() {
     if (dirty) {
         resetSleepTimer();
-        M5Cardputer.update();  // flush any boot-time keyboard state before reading picker input
-        g_modePickerReadyAt = millis() + 180;
+        M5Cardputer.update();  // first flush of boot-time keyboard state
+        delay(25);
+        M5Cardputer.update();  // second pass helps on warm boots before the picker becomes interactive
+        g_modePickerReadyAt = millis() + 320;
+        g_modePickerPrimed = true;
         drawModePicker();
         dirty = false;
     }
-    if (millis() < g_modePickerReadyAt) return;
+    if (g_modePickerPrimed) {
+        M5Cardputer.update();
+        if (millis() < g_modePickerReadyAt) return;
+        g_modePickerPrimed = false;
+    }
     auto ev = readKeys();
     if (!ev.changed) return;
     if (ev.left || ev.right) {
@@ -447,6 +455,8 @@ void handleBoot() {
     if (bootLine >= BOOT_LINES && millis() - bootStart > 1500) {
         g_modePickerSel = settingsBootMode();
         resetSleepTimer();
+        delay(80);
+        M5Cardputer.update();
         state = State::MODE_PICKER;
         dirty = true;
     }
@@ -462,13 +472,27 @@ void setup() {
     M5Cardputer.Display.setRotation(1);
     M5Cardputer.Display.setFont(&fonts::Font0);
     M5Cardputer.Display.setTextSize(1);
-    // Define all LoRa cap pins before SPI init.
-    // Floating pins cause MP3 scroll noise, SD MISO collisions, and spurious IRQs.
+    // Park shared expansion hats in safe idle states before any app touches them.
+    // This avoids warm-boot lockups when a hat is attached but its app has not opened yet.
+    //
+    // LoRa / GPS cap:
     pinMode(LORA_NSS_PIN,  OUTPUT);          digitalWrite(LORA_NSS_PIN,  HIGH); // deselect SPI
     pinMode(LORA_RST_PIN,  OUTPUT);          digitalWrite(LORA_RST_PIN,  LOW);  // hold in reset until LoRa app opens
     pinMode(LORA_BUSY_PIN, INPUT_PULLDOWN);  // LoRa output — pulldown prevents float
     pinMode(LORA_DIO1_PIN, INPUT_PULLDOWN);  // LoRa IRQ output — pulldown prevents float
+    pinMode(GPS_TX_PIN, OUTPUT);             digitalWrite(GPS_TX_PIN, HIGH);     // UART idle high
+    pinMode(GPS_RX_PIN, INPUT_PULLUP);                                       // keep RX from floating
+
+    // PINGEQUA / Hydra RF hat:
+    pinMode(CC1101_CS_PIN, OUTPUT);         digitalWrite(CC1101_CS_PIN, HIGH);  // deselect CC1101
+    pinMode(CC1101_GDO0_PIN, INPUT_PULLDOWN);                                   // raw RX line idle low
+    pinMode(NRF24_CSN_PIN, OUTPUT);         digitalWrite(NRF24_CSN_PIN, HIGH);  // deselect nRF24
+    pinMode(NRF24_CE_PIN, OUTPUT);          digitalWrite(NRF24_CE_PIN, LOW);    // radio disabled until app opens
+
+    // Shared SD SPI bus comes up last after all chip-selects are parked.
     SPI.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, SD_CS_PIN);
+    pinMode(SD_CS_PIN, OUTPUT);
+    digitalWrite(SD_CS_PIN, HIGH);
 }
 
 void loop() {
