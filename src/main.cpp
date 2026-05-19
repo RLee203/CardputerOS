@@ -32,7 +32,6 @@
 #include "app_wifi.h"
 #include "app_cc1101.h"
 #include "app_nrf24.h"
-#include "app_keyfob.h"
 #include "app_espnow.h"
 
 Terminal term;
@@ -43,7 +42,7 @@ enum class State {
     MODE_PICKER,
     MODE_SWITCH_PROMPT,
     LOCK_SCREEN,
-    LAUNCHER, APP_SSH, APP_MP3, APP_NOTES, APP_SETTINGS, APP_GAMES, APP_FILES, APP_IR_REMOTE, APP_PHOTOS, APP_VOICE_MEMOS, APP_HID_KEYBOARD, APP_USB_STORAGE, APP_TIMER, APP_GPS, APP_LORA, APP_NFC, APP_PAYLOADS, APP_BLE, APP_DETECTOR, APP_WIFI, APP_CC1101, APP_NRF24, APP_KEYFOB, APP_ESPNOW, APP_PLACEHOLDER
+    LAUNCHER, APP_SSH, APP_MP3, APP_NOTES, APP_SETTINGS, APP_GAMES, APP_FILES, APP_IR_REMOTE, APP_PHOTOS, APP_VOICE_MEMOS, APP_HID_KEYBOARD, APP_USB_STORAGE, APP_TIMER, APP_GPS, APP_LORA, APP_NFC, APP_PAYLOADS, APP_BLE, APP_DETECTOR, APP_WIFI, APP_CC1101, APP_NRF24, APP_ESPNOW, APP_PLACEHOLDER
 };
 
 static State state             = State::BOOT;
@@ -82,7 +81,6 @@ static bool requiresRadioMode(AppScene scene) {
         case AppScene::WIFI_TOOLS:
         case AppScene::CC1101:
         case AppScene::NRF24:
-        case AppScene::KEYFOB:
         case AppScene::ESPNOW:
             return true;
         default:
@@ -241,10 +239,6 @@ void launchApp(AppScene scene) {
             appNrf24Enter();
             state = State::APP_NRF24;
             break;
-        case AppScene::KEYFOB:
-            appKeyfobEnter();
-            state = State::APP_KEYFOB;
-            break;
         case AppScene::ESPNOW:
             appEspnowEnter();
             state = State::APP_ESPNOW;
@@ -262,7 +256,7 @@ static void drawModePicker() {
     d.setFont(&fonts::Font0);
     d.setTextSize(2);
     d.setTextColor(C_FG, C_BG);
-    const char* title = "Cardputer OS 2.2";
+    const char* title = "Cardputer OS 2.3";
     d.setCursor((SCREEN_W - (int)strlen(title) * FONT_W * 2) / 2, 8);
     d.print(title);
     d.setTextSize(1);
@@ -411,7 +405,7 @@ void handleBoot() {
         // Version / tagline
         d.setTextSize(1);
         d.setTextColor(C_DIM, C_BG);
-        const char* ver = "v2.2  --  M5Stack Cardputer";
+        const char* ver = "v2.3  --  M5Stack Cardputer";
         int vw = strlen(ver) * FONT_W;
         d.setCursor((SCREEN_W - vw) / 2, 56);
         d.print(ver);
@@ -501,7 +495,6 @@ void loop() {
         case State::APP_WIFI:       appWifiLoop();      break;
         case State::APP_CC1101:     appCc1101Loop();    break;
         case State::APP_NRF24:      appNrf24Loop();     break;
-        case State::APP_KEYFOB:     appKeyfobLoop();    break;
         case State::APP_ESPNOW:     appEspnowLoop();    break;
         case State::APP_PLACEHOLDER: appPlaceholderLoop(); break;
     }

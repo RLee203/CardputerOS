@@ -83,10 +83,11 @@ constexpr int LORA_DIO1_PIN   = 4;
 // Shares SPI bus (SCK=40, MISO=39, MOSI=14) with SD/LoRa cap slot.
 // Hardware MUX on module selects CC1101 vs nRF24 (can't use both at once).
 // G6/G4 conflict with LORA_BUSY/DIO1 — LoRa cap not present with PINGEQUA.
-constexpr int CC1101_CS_PIN   = 6;    // same physical pin as LORA_BUSY_PIN
-constexpr int CC1101_GDO0_PIN = 4;    // same physical pin as LORA_DIO1_PIN
-constexpr int NRF24_CSN_PIN   = 6;    // same as CC1101_CS (hardware mux)
-constexpr int NRF24_CE_PIN    = 4;    // same as CC1101_GDO0 (hardware mux)
+constexpr int CC1101_CS_PIN   = 13;   // Hydra/PINGEQUA hat manual: CC1101 CS
+constexpr int CC1101_GDO0_PIN = 5;    // Hydra/PINGEQUA hat manual: CC1101 IO0/GDO0
+constexpr int NRF24_CSN_PIN   = 6;    // Hydra/PINGEQUA hat manual: nRF24 CS
+constexpr int NRF24_CE_PIN    = 4;    // Hydra/PINGEQUA hat manual: nRF24 IO0/CE
 
 // ── BLE logging ────────────────────────────────────────────────────────────
 constexpr const char* BLE_DIR = "/ble";
+constexpr const char* RF_DIR  = "/rf";

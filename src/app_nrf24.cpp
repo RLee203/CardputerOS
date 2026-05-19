@@ -10,8 +10,9 @@ static constexpr int N_CH    = 126;   // 2400..2525 MHz
 static constexpr int BAR_W   = 2;     // px per channel (126*2 = 252 > 240, so show ch 0-119)
 static constexpr int N_SHOW  = SCREEN_W / BAR_W; // 120 channels visible
 static constexpr int SWEEP_SAMPLES = 20; // sweeps before clear
-static constexpr int BAR_Y0  = STATUS_H;
-static constexpr int BAR_H   = SCREEN_H - STATUS_H - 10;
+static constexpr int SPEC_PAD_X = 6;
+static constexpr int BAR_Y0  = STATUS_H + 6;
+static constexpr int BAR_H   = SCREEN_H - STATUS_H - 20;
 static constexpr int LABEL_Y = SCREEN_H - 9;
 
 // ── State ──────────────────────────────────────────────────────────────────
@@ -61,7 +62,19 @@ static void drawInitError() {
 // ── Init ───────────────────────────────────────────────────────────────────
 static bool initChip() {
     if (s_inited) return true;
+    SPI.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, NRF24_CSN_PIN);
+    pinMode(NRF24_CSN_PIN, OUTPUT);
+    digitalWrite(NRF24_CSN_PIN, HIGH);
+    pinMode(NRF24_CE_PIN, OUTPUT);
+    digitalWrite(NRF24_CE_PIN, LOW);
+    pinMode(LORA_NSS_PIN, OUTPUT);
+    digitalWrite(LORA_NSS_PIN, HIGH);
+    pinMode(LORA_RST_PIN, OUTPUT);
+    digitalWrite(LORA_RST_PIN, LOW);
+    delay(10);
     if (!radio.begin()) return false;
+    delay(5);
+    if (!radio.isChipConnected()) return false;
     radio.setAutoAck(false);
     radio.setRetries(0, 0);
     radio.setPALevel(RF24_PA_MAX);
@@ -96,29 +109,48 @@ static void sweepSpectrum() {
 
 static void drawSpectrumBars() {
     auto& d = M5Cardputer.Display;
+    uint8_t maxHit = 0;
     for (int i = 0; i < N_SHOW; i++) {
-        int h = (s_hits[i] * BAR_H) / SWEEP_SAMPLES;
+        if (s_hits[i] > maxHit) maxHit = s_hits[i];
+    }
+    if (maxHit < 3) maxHit = 3;
+    for (int i = 0; i < N_SHOW; i++) {
+        int h = (s_hits[i] * BAR_H) / maxHit;
         if (h > BAR_H) h = BAR_H;
-        int x = i * BAR_W;
-        uint32_t col = (h > BAR_H * 2 / 3) ? (uint32_t)0xFF3333 :
-                       (h > BAR_H / 3)      ? (uint32_t)0xFFAA00 : (uint32_t)0x0044AA;
+        if (s_hits[i] > 0 && h < 2) h = 2;
+        int x = SPEC_PAD_X + i * BAR_W;
+        uint32_t col = (h > BAR_H * 2 / 3) ? (uint32_t)0x44F1C1 :
+                       (h > BAR_H / 3)      ? (uint32_t)0x2EAAFF : (uint32_t)0x18507A;
         int boty = BAR_Y0 + BAR_H;
         if (h > 0) d.fillRect(x, boty - h, BAR_W, h, col);
-        d.fillRect(x, BAR_Y0, BAR_W, BAR_H - h, 0x060A0F);
+        d.fillRect(x, BAR_Y0, BAR_W, BAR_H - h, 0x071019);
     }
 }
 
 static void drawSpectrumHeader() {
     auto& d = M5Cardputer.Display;
-    d.fillRect(0, 0, SCREEN_W, STATUS_H, 0x000A1A);
+    d.fillRect(0, 0, SCREEN_W, STATUS_H, 0x07111E);
+    d.fillRect(0, STATUS_H, SCREEN_W, SCREEN_H - STATUS_H, 0x03070D);
     d.setFont(&fonts::Font0); d.setTextSize(1);
-    d.setTextColor(0x00AAFF, 0x000A1A);
+    d.setTextColor(0x4FD9FF, 0x07111E);
     d.setCursor(2, 3);
-    d.print("nRF24 Spectrum  2400-2480MHz");
-    d.setTextColor(C_DIM, C_BG);
-    d.fillRect(0, LABEL_Y, SCREEN_W, SCREEN_H - LABEL_Y, C_BG);
-    d.setCursor(0, LABEL_Y); d.print("2400");
-    d.setCursor(SCREEN_W - 6 * FONT_W, LABEL_Y); d.print("2480M");
+    d.print("nRF24  LIVE RF  2.4G");
+    d.setTextColor(0x6B8BA6, 0x07111E);
+    d.setCursor(SCREEN_W - 70, 3);
+    d.print("channel map");
+
+    d.drawRoundRect(SPEC_PAD_X, BAR_Y0 - 2, SCREEN_W - SPEC_PAD_X * 2, BAR_H + 4, 5, 0x173B58);
+    d.fillRect(SPEC_PAD_X + 1, BAR_Y0 - 1, SCREEN_W - SPEC_PAD_X * 2 - 2, BAR_H + 2, 0x071019);
+
+    for (int gx = 1; gx < 4; ++gx) {
+        int x = SPEC_PAD_X + ((SCREEN_W - SPEC_PAD_X * 2) * gx) / 4;
+        d.drawFastVLine(x, BAR_Y0 + 1, BAR_H, 0x102535);
+    }
+    d.drawFastHLine(SPEC_PAD_X + 2, BAR_Y0 + BAR_H / 2, SCREEN_W - SPEC_PAD_X * 2 - 4, 0x133246);
+
+    d.setTextColor(0x3E9BC2, 0x03070D);
+    d.setCursor(SPEC_PAD_X, LABEL_Y); d.print("2400");
+    d.setCursor(SCREEN_W - 34, LABEL_Y); d.print("2525");
 }
 
 // ── Sniff ──────────────────────────────────────────────────────────────────
@@ -303,6 +335,7 @@ void appNrf24Enter() {
     s_sniffHead = 0;
     s_mjCount   = 0;
     s_mjScanCh  = 0;
+    s_sniffDirty = false;
 }
 
 void appNrf24Loop() {
@@ -324,6 +357,7 @@ void appNrf24Loop() {
         if (ev.down && s_menuSel < N_MENU - 1) { s_menuSel++; s_dirty = true; }
         if (ev.enter) {
             if (!s_inited && !initChip()) {
+                s_inited = false;
                 drawInitError();
                 s_initError = true;
                 break;

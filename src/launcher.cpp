@@ -47,12 +47,11 @@ static const AppEntry APPS[] = {
     { "WiFi", 'w', AppScene::WIFI_TOOLS, 0x003377 },
     { "CC1101", 'q', AppScene::CC1101, 0x553300 },
     { "nRF24",  'z', AppScene::NRF24,  0x003355 },
-    { "KeyFob", 'k', AppScene::KEYFOB, 0x6A3300 },
     { "ESP-NOW", 'i', AppScene::ESPNOW, 0x005566 },
 };
 static constexpr int APP_COUNT = (int)(sizeof(APPS) / sizeof(APPS[0]));
 static const int SD_APP_IDS[] = { 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 15, 4 };
-static const int RADIO_APP_IDS[] = { 0, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 4 };
+static const int RADIO_APP_IDS[] = { 0, 12, 13, 14, 16, 17, 18, 19, 20, 21, 4 };
 static constexpr int SD_APP_COUNT = (int)(sizeof(SD_APP_IDS) / sizeof(SD_APP_IDS[0]));
 static constexpr int RADIO_APP_COUNT = (int)(sizeof(RADIO_APP_IDS) / sizeof(RADIO_APP_IDS[0]));
 
@@ -341,16 +340,6 @@ static void iEspNow(int cx, int cy) {
     d.fillRect(cx + 10, cy + 8, 4, 3, 0x00CCFF);   // tail right bubble
 }
 
-static void iKeyfob(int cx, int cy) {
-    auto& d = M5Cardputer.Display;
-    // Key shape: round head + shaft + teeth
-    d.drawCircle(cx - 6, cy - 4, 6, 0xFFFFFF);
-    d.drawCircle(cx - 6, cy - 4, 3, 0xFFFFFF);
-    d.drawFastHLine(cx, cy - 4, 10, 0xFFFFFF);
-    d.fillRect(cx + 6, cy - 4, 2, 4, 0xFFFFFF);
-    d.fillRect(cx + 9, cy - 4, 2, 3, 0xFFFFFF);
-}
-
 static void iNRF24(int cx, int cy) {
     auto& d = M5Cardputer.Display;
     // 2.4GHz chip: small IC body + four signal dots above
@@ -417,8 +406,7 @@ static void drawCell(int row, int col) {
         case 18: iWifi(icx, icy);        break;
         case 19: iCC1101(icx, icy);      break;
         case 20: iNRF24(icx, icy);       break;
-        case 21: iKeyfob(icx, icy);      break;
-        case 22: iEspNow(icx, icy);      break;
+        case 21: iEspNow(icx, icy);      break;
     }
 
     // Label
