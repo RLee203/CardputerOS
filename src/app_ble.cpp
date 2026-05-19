@@ -3,6 +3,7 @@
 #include "input.h"
 #include "config.h"
 #include <M5Cardputer.h>
+#include <SD.h>
 #include <WiFi.h>
 #include <NimBLEDevice.h>
 #include <NimBLEScan.h>
@@ -18,6 +19,17 @@ static constexpr int SCAN_SECS   = 1;
 struct BLEEntry { char mac[18]; char name[21]; int rssi; };
 static BLEEntry s_devices[MAX_DEVICES];
 static int      s_devCount = 0;
+
+String csvEscape(const String& in) {
+    String out = "\"";
+    for (size_t i = 0; i < in.length(); ++i) {
+        char c = in[i];
+        if (c == '"') out += "\"\"";
+        else out += c;
+    }
+    out += "\"";
+    return out;
+}
 
 class BLEScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
     void onResult(NimBLEAdvertisedDevice* dev) override {
@@ -231,6 +243,7 @@ namespace {
 enum class BleState {
     MENU,
     TRACKER_SCAN, LIST, TRACKER_DONE,
+    WARDRIVE,
     ATTACKS_MENU,
     SPOOF_LIST, IMPERSONATE_LIST,
     BROADCASTING
@@ -258,6 +271,41 @@ int             s_cycleIdx  = 0;
 unsigned long   s_cycleMs   = 0;
 AttackSub       s_bcastSub  = AttackSub::SPOOF;
 int             s_bcastIdx  = 0;  // current target idx in cycle or selected idx
+bool            s_wardriveRunning = false;
+String          s_wardriveFile;
+uint32_t        s_wardriveRows = 0;
+uint32_t        s_wardriveDevices = 0;
+uint32_t        s_lastWardriveScanMs = 0;
+String          s_toast;
+uint32_t        s_toastUntilMs = 0;
+
+String wardriveFilename() {
+    char fallback[40];
+    snprintf(fallback, sizeof(fallback), "/ble_%08lu.csv", millis());
+    return String(BLE_DIR) + fallback;
+}
+
+void appendWardriveRows() {
+    if (!s_wardriveRunning || s_devCount <= 0 || !SD.begin(SD_CS_PIN, SPI, 25000000)) return;
+    File file = SD.open(s_wardriveFile, FILE_APPEND);
+    if (!file) return;
+    String utc = String(millis());
+    for (int i = 0; i < s_devCount; ++i) {
+        file.print(csvEscape(utc)); file.print(',');
+        file.print(csvEscape(String(s_devices[i].mac))); file.print(',');
+        file.print(csvEscape(String(s_devices[i].name))); file.print(',');
+        file.println(s_devices[i].rssi);
+        ++s_wardriveRows;
+    }
+    s_wardriveDevices += s_devCount;
+    file.close();
+}
+
+void showToast(const String& msg, uint32_t ms = 1400) {
+    s_toast = msg;
+    s_toastUntilMs = millis() + ms;
+    s_dirty = true;
+}
 
 void shutdownBle() {
     if (s_scan && s_scan->isScanning()) s_scan->stop();
@@ -265,6 +313,7 @@ void shutdownBle() {
         NimBLEDevice::getAdvertising()->stop();
         s_broadcasting = false;
     }
+    s_wardriveRunning = false;
     if (s_bleInited) {
         NimBLEDevice::deinit(true);
         s_scan = nullptr;
@@ -341,10 +390,11 @@ void drawMenu() {
     static const struct { const char* title; const char* sub; uint32_t col; } CARDS[] = {
         {"BLE Scanner",  "Scan & list nearby BLE devices",  0x0055CC},
         {"Tracker Scan", "Detect AirTag, Tile, GPS...",     0xCC0044},
+        {"Wardriving",   "Log BLE beacons to SD as CSV",    0x117744},
         {"Attacks",      "Spoof & impersonate devices",     0xAA5500},
     };
-    for (int i = 0; i < 3; i++) {
-        int y = 15 + i * 28;
+    for (int i = 0; i < 4; i++) {
+        int y = 15 + i * 24;
         bool sel = (i == s_menuSel);
         uint32_t col = CARDS[i].col;
         if (sel) { d.fillRoundRect(2,y,SCREEN_W-4,26,4,col); d.setTextColor(0x000000,col); }
@@ -355,6 +405,38 @@ void drawMenu() {
     }
     d.setTextColor(C_DIM,C_BG); d.setCursor(2,SCREEN_H-10);
     d.print("up/dn=select  Enter=open  bksp=home");
+}
+
+void drawWardrive() {
+    auto& d = M5Cardputer.Display;
+    d.fillScreen(C_BG);
+    drawStatusBar("BLE Wardriving");
+    d.setFont(&fonts::Font0); d.setTextSize(1);
+    d.setTextColor(C_DIM, C_BG); d.setCursor(10, 24); d.print("State");
+    d.setTextColor(s_wardriveRunning ? 0x33CC66 : C_FG, C_BG); d.setCursor(88, 24); d.print(s_wardriveRunning ? "LOGGING" : "IDLE");
+    d.setTextColor(C_DIM, C_BG); d.setCursor(10, 38); d.print("Rows");
+    d.setTextColor(C_FG, C_BG); d.setCursor(88, 38); d.print(String(s_wardriveRows));
+    d.setTextColor(C_DIM, C_BG); d.setCursor(10, 52); d.print("Devices");
+    d.setTextColor(C_FG, C_BG); d.setCursor(88, 52); d.print(String(s_wardriveDevices));
+    d.setTextColor(C_DIM, C_BG); d.setCursor(10, 66); d.print("Last Scan");
+    d.setTextColor(C_FG, C_BG); d.setCursor(88, 66); d.print(String(s_devCount));
+    d.setTextColor(C_DIM, C_BG); d.setCursor(10, 80); d.print("File");
+    d.setTextColor(C_FG, C_BG); d.setCursor(88, 80);
+    d.print(s_wardriveFile.length() ? s_wardriveFile.substring(s_wardriveFile.lastIndexOf('/') + 1) : "--");
+    d.setTextColor(C_DIM, C_BG); d.setCursor(8, SCREEN_H - 10);
+    d.print("Enter=start/stop  Del=reset  bksp=menu");
+
+    if (s_toast.length() && millis() < s_toastUntilMs) {
+        int w = SCREEN_W - 24;
+        int h = 22;
+        int x = 12;
+        int y = SCREEN_H - h - 16;
+        d.fillRoundRect(x, y, w, h, 5, 0x002a2a);
+        d.drawRoundRect(x, y, w, h, 5, C_ACCENT);
+        d.setTextColor(C_INPUT, 0x002a2a);
+        d.setCursor(x + 8, y + 7);
+        d.print(s_toast);
+    }
 }
 
 void drawAttacksMenu() {
@@ -551,7 +633,7 @@ void appBleLoop() {
     }
 
     // Scan completion
-    if (s_scanDone) {
+    if (s_scanDone && s_state != BleState::WARDRIVE) {
         s_scanDone = false;
         s_state = (s_scanMode==ScanMode::TRACKERS) ? BleState::TRACKER_DONE : BleState::LIST;
         s_dirty = true;
@@ -560,6 +642,7 @@ void appBleLoop() {
     if (s_dirty) {
         switch (s_state) {
             case BleState::MENU:         drawMenu();    break;
+            case BleState::WARDRIVE:     drawWardrive(); break;
             case BleState::ATTACKS_MENU: drawAttacksMenu(); break;
             case BleState::LIST:         drawList();    break;
             case BleState::TRACKER_DONE: drawTrackerResults(); break;
@@ -574,6 +657,27 @@ void appBleLoop() {
             default: break;
         }
         s_dirty = false;
+    }
+
+    if (s_state == BleState::WARDRIVE && s_wardriveRunning && !s_scan->isScanning()) {
+        if (millis() - s_lastWardriveScanMs >= 3000) {
+            s_lastWardriveScanMs = millis();
+            s_devCount = 0;
+            s_scanMode = ScanMode::DEVICES;
+            s_scan->setAdvertisedDeviceCallbacks(&s_callbacks);
+            doScan(2);
+        }
+    }
+
+    if (s_state == BleState::WARDRIVE && s_scanDone) {
+        s_scanDone = false;
+        appendWardriveRows();
+        s_dirty = true;
+    }
+
+    if (s_toast.length() && millis() >= s_toastUntilMs) {
+        s_toast = "";
+        s_dirty = true;
     }
 
     auto ev = readKeys();
@@ -594,6 +698,11 @@ void appBleLoop() {
             s_menuSel = 0;
             s_state = BleState::MENU; s_dirty = true; return;
         }
+        if (s_state == BleState::WARDRIVE) {
+            s_wardriveRunning = false;
+            s_menuSel = 0;
+            s_state = BleState::MENU; s_dirty = true; return;
+        }
         if (s_state == BleState::MENU) {
             shutdownBle(); goHome(); return;
         }
@@ -605,7 +714,7 @@ void appBleLoop() {
     switch (s_state) {
         case BleState::MENU:
             if (ev.up   && s_menuSel>0) { s_menuSel--; s_dirty=true; break; }
-            if (ev.down && s_menuSel<2) { s_menuSel++; s_dirty=true; break; }
+            if (ev.down && s_menuSel<3) { s_menuSel++; s_dirty=true; break; }
             if (ev.enter) {
                 if (s_menuSel==0) {
                     s_devCount=0; s_scroll=0; s_scanMode=ScanMode::DEVICES;
@@ -617,9 +726,41 @@ void appBleLoop() {
                     s_scan->setAdvertisedDeviceCallbacks(&s_trkCallbacks);
                     drawScanning(true); doScan(8);
                     s_state=BleState::TRACKER_SCAN;
+                } else if (s_menuSel==2) {
+                    s_state = BleState::WARDRIVE;
+                    s_dirty = true;
                 } else {
                     s_menuSel=0; s_state=BleState::ATTACKS_MENU; s_dirty=true;
                 }
+            }
+            break;
+
+        case BleState::WARDRIVE:
+            if (ev.enter) {
+                if (s_wardriveRunning) {
+                    s_wardriveRunning = false;
+                } else if (SD.begin(SD_CS_PIN, SPI, 25000000)) {
+                    if (!SD.exists(BLE_DIR)) SD.mkdir(BLE_DIR);
+                    s_wardriveFile = wardriveFilename();
+                    File file = SD.open(s_wardriveFile, FILE_WRITE);
+                    if (file) {
+                        file.println("time_ms,mac,name,rssi");
+                        file.close();
+                        s_wardriveRows = 0;
+                        s_wardriveDevices = 0;
+                        s_lastWardriveScanMs = millis() - 3000;
+                        s_wardriveRunning = true;
+                        showToast("Logging: " + s_wardriveFile.substring(s_wardriveFile.lastIndexOf('/') + 1));
+                    }
+                }
+                s_dirty = true;
+            }
+            if (ev.del) {
+                s_wardriveRunning = false;
+                s_wardriveRows = 0;
+                s_wardriveDevices = 0;
+                s_wardriveFile = "";
+                s_dirty = true;
             }
             break;
 

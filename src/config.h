@@ -87,3 +87,6 @@ constexpr int CC1101_CS_PIN   = 6;    // same physical pin as LORA_BUSY_PIN
 constexpr int CC1101_GDO0_PIN = 4;    // same physical pin as LORA_DIO1_PIN
 constexpr int NRF24_CSN_PIN   = 6;    // same as CC1101_CS (hardware mux)
 constexpr int NRF24_CE_PIN    = 4;    // same as CC1101_GDO0 (hardware mux)
+
+// ── BLE logging ────────────────────────────────────────────────────────────
+constexpr const char* BLE_DIR = "/ble";
