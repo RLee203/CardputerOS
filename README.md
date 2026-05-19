@@ -90,6 +90,7 @@ pio run --target upload
 - **microSD:** required for MP3, Photos, Games, Voice Memos, GPS logs, wardriving logs, payloads, and NFC dumps
 - **External IR receiver:** optional, only needed for learning new IR codes
 - **LoRa/GNSS Cap:** required for GPS and LoRa apps
+- **PINGEQUA CC1101 / nRF24 hat:** supported by the `CC1101`, `nRF24`, and `Key Fob` radio tools
 - **NFC Module (PN532):** connect via Grove on the LoRa cap (`G8=SDA`, `G9=SCL`, `3.3V`, `GND`)
 
 ### IR Receiver Wiring
