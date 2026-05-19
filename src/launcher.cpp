@@ -45,10 +45,14 @@ static const AppEntry APPS[] = {
     { "BLE", 'e', AppScene::BLE, 0x003566 },
     { "Detector", 'd', AppScene::DETECTOR, 0x005533 },
     { "WiFi", 'w', AppScene::WIFI_TOOLS, 0x003377 },
+    { "CC1101", 'q', AppScene::CC1101, 0x553300 },
+    { "nRF24",  'z', AppScene::NRF24,  0x003355 },
+    { "KeyFob", 'k', AppScene::KEYFOB, 0x6A3300 },
+    { "ESP-NOW", 'i', AppScene::ESPNOW, 0x005566 },
 };
 static constexpr int APP_COUNT = (int)(sizeof(APPS) / sizeof(APPS[0]));
-static const int SD_APP_IDS[] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15 };
-static const int RADIO_APP_IDS[] = { 0, 4, 12, 13, 14, 16, 17, 18 };
+static const int SD_APP_IDS[] = { 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 15, 4 };
+static const int RADIO_APP_IDS[] = { 0, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 4 };
 static constexpr int SD_APP_COUNT = (int)(sizeof(SD_APP_IDS) / sizeof(SD_APP_IDS[0]));
 static constexpr int RADIO_APP_COUNT = (int)(sizeof(RADIO_APP_IDS) / sizeof(RADIO_APP_IDS[0]));
 
@@ -318,6 +322,50 @@ static void iBle(int cx, int cy) {
     d.drawLine(cx, cy + 8, cx - 5, cy + 12, 0xFFFFFF);
 }
 
+static void iCC1101(int cx, int cy) {
+    auto& d = M5Cardputer.Display;
+    // Sub-GHz waves: two half-arcs pointing left + small chip rect
+    d.drawArc(cx + 4, cy, 12, 10, 120, 240, 0xFFFFFF);
+    d.drawArc(cx + 4, cy,  7,  5, 120, 240, 0xFFFFFF);
+    d.fillRect(cx + 4, cy - 3, 8, 6, 0xFFFFFF);
+    d.fillRect(cx + 6, cy - 5, 4, 2, 0xFFAA00);
+    d.fillRect(cx + 6, cy + 3, 4, 2, 0xFFAA00);
+}
+
+static void iEspNow(int cx, int cy) {
+    auto& d = M5Cardputer.Display;
+    // Two overlapping speech bubbles (chat symbol)
+    d.drawRoundRect(cx - 12, cy - 10, 18, 13, 3, 0xFFFFFF);
+    d.fillRect(cx - 10, cy + 2, 4, 3, 0xFFFFFF);   // tail left bubble
+    d.drawRoundRect(cx - 4,  cy - 4,  18, 13, 3, 0x00CCFF);
+    d.fillRect(cx + 10, cy + 8, 4, 3, 0x00CCFF);   // tail right bubble
+}
+
+static void iKeyfob(int cx, int cy) {
+    auto& d = M5Cardputer.Display;
+    // Key shape: round head + shaft + teeth
+    d.drawCircle(cx - 6, cy - 4, 6, 0xFFFFFF);
+    d.drawCircle(cx - 6, cy - 4, 3, 0xFFFFFF);
+    d.drawFastHLine(cx, cy - 4, 10, 0xFFFFFF);
+    d.fillRect(cx + 6, cy - 4, 2, 4, 0xFFFFFF);
+    d.fillRect(cx + 9, cy - 4, 2, 3, 0xFFFFFF);
+}
+
+static void iNRF24(int cx, int cy) {
+    auto& d = M5Cardputer.Display;
+    // 2.4GHz chip: small IC body + four signal dots above
+    d.drawRoundRect(cx - 6, cy, 12, 8, 2, 0xFFFFFF);
+    // Signal dots
+    d.fillCircle(cx - 4, cy - 4, 1, 0x00AAFF);
+    d.fillCircle(cx,     cy - 6, 1, 0x00AAFF);
+    d.fillCircle(cx + 4, cy - 4, 1, 0x00AAFF);
+    // Pins
+    d.drawFastHLine(cx - 9, cy + 2, 3, 0xFFFFFF);
+    d.drawFastHLine(cx - 9, cy + 5, 3, 0xFFFFFF);
+    d.drawFastHLine(cx + 6, cy + 2, 3, 0xFFFFFF);
+    d.drawFastHLine(cx + 6, cy + 5, 3, 0xFFFFFF);
+}
+
 // ── Cell ───────────────────────────────────────────────────────────────────
 
 static void drawCell(int row, int col) {
@@ -366,7 +414,11 @@ static void drawCell(int row, int col) {
         case 15: iPayloads(icx, icy);    break;
         case 16: iBle(icx, icy);         break;
         case 17: iDetector(icx, icy);    break;
-        case 18: iWifi(icx, icy);       break;
+        case 18: iWifi(icx, icy);        break;
+        case 19: iCC1101(icx, icy);      break;
+        case 20: iNRF24(icx, icy);       break;
+        case 21: iKeyfob(icx, icy);      break;
+        case 22: iEspNow(icx, icy);      break;
     }
 
     // Label
@@ -388,19 +440,21 @@ static void drawStatusBar() {
     d.setTextSize(1);
     d.setTextColor(0xDDDDDD, SBG);
     d.setCursor(2, 3);
-    d.print(isSdMode() ? "SD Mode" : "Radio Mode");
+    d.print(isSdMode() ? "Multimedia" : "Radio");
 
     String  info;
-    if (isSdMode()) info = "sd mode";
+    if (isSdMode()) info = "";
     else {
         bool ok = (WiFi.status() == WL_CONNECTED);
         info = ok ? WiFi.localIP().toString() : "radio";
     }
-    int     iw   = info.length() * FONT_W;
-    uint32_t infoCol = isSdMode() ? (uint32_t)0xFFAA00 : ((WiFi.status() == WL_CONNECTED) ? (uint32_t)0x00BBFF : (uint32_t)0x555555);
-    d.setTextColor(infoCol, SBG);
-    d.setCursor(SCREEN_W - iw - 2, 3);
-    d.print(info.c_str());
+    if (info.length() > 0) {
+        int     iw   = info.length() * FONT_W;
+        uint32_t infoCol = (WiFi.status() == WL_CONNECTED) ? (uint32_t)0x00BBFF : (uint32_t)0x555555;
+        d.setTextColor(infoCol, SBG);
+        d.setCursor(SCREEN_W - iw - 2, 3);
+        d.print(info.c_str());
+    }
     char pageBuf[8];
     snprintf(pageBuf, sizeof(pageBuf), "%d/%d", selPage + 1, pageCount());
     d.setTextColor(0xDDDDDD, SBG);

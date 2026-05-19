@@ -115,7 +115,8 @@ static void drawRomList() {
         return;
     }
 
-    int vis = TERM_ROWS - 1;
+    int listBottom = SCREEN_H - (FONT_H + 4); // reserve footer/status area
+    int vis = (listBottom - STATUS_H) / (FONT_H + 2);
     int off = (romSel >= vis) ? romSel - vis + 1 : 0;
     for (int i = 0; i < vis; i++) {
         int idx = i + off;

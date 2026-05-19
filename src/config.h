@@ -78,3 +78,12 @@ constexpr int LORA_NSS_PIN    = 5;
 constexpr int LORA_RST_PIN    = 3;
 constexpr int LORA_BUSY_PIN   = 6;
 constexpr int LORA_DIO1_PIN   = 4;
+
+// ── PINGEQUA NRF24&CC1101 RF 2in1 Module ──────────────────────────────────
+// Shares SPI bus (SCK=40, MISO=39, MOSI=14) with SD/LoRa cap slot.
+// Hardware MUX on module selects CC1101 vs nRF24 (can't use both at once).
+// G6/G4 conflict with LORA_BUSY/DIO1 — LoRa cap not present with PINGEQUA.
+constexpr int CC1101_CS_PIN   = 6;    // same physical pin as LORA_BUSY_PIN
+constexpr int CC1101_GDO0_PIN = 4;    // same physical pin as LORA_DIO1_PIN
+constexpr int NRF24_CSN_PIN   = 6;    // same as CC1101_CS (hardware mux)
+constexpr int NRF24_CE_PIN    = 4;    // same as CC1101_GDO0 (hardware mux)

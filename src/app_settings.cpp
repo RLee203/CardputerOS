@@ -109,7 +109,7 @@ static const char* HELP_LINES[] = {
     "fn+; / .  Prev / Next song",
     "+ / -     Volume up / down",
     "  [ MODES ]",
-    "SD Mode: MP3 Files Photos",
+    "Multimedia: MP3 Files Photos",
     "Radio: WiFi BLE GPS LoRa",
     "Use WiFi app to connect",
     "fn+,//    Brightness - / +",
@@ -142,7 +142,7 @@ static const char* MENU_FOOTER[] = {
     "fn+, prev  fn+/ next theme",
     "Enter to open",
     "fn+, prev  fn+/ next timeout",
-    "Cardputer OS v2.1",
+    "Cardputer OS v2.2",
     "Enter to toggle on/off",
     "Enter to set a new PIN",
     "Enter to switch and restart",
@@ -195,7 +195,7 @@ static void drawMenu() {
                 d.print(buf);
                 break;
             case 4:
-                d.print("About: Cardputer OS v2.1");
+                d.print("About: Cardputer OS v2.2");
                 if (sel) {
                     d.setTextColor(C_DIM, bg);
                     d.setCursor(SCREEN_W / 2, y + 2);
@@ -211,7 +211,7 @@ static void drawMenu() {
                 d.print(buf);
                 break;
             case 7:
-                snprintf(buf, sizeof(buf), "Mode: %s", isSdMode() ? "SD" : "Radio");
+                snprintf(buf, sizeof(buf), "Mode: %s", isSdMode() ? "Multimedia" : "Radio");
                 d.print(buf);
                 break;
         }

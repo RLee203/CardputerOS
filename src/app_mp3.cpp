@@ -7,8 +7,14 @@
 #include <SD.h>
 #include <Audio.h>
 
+static String   mp3LastAudioInfo;
+
 void audio_info(const char* info) {
-    Serial.printf("[MP3] %s\n", info ? info : "(null)");
+    const char* msg = info ? info : "(null)";
+    if (strcmp(msg, "Closing audio file") != 0 || mp3LastAudioInfo.length() == 0) {
+        mp3LastAudioInfo = msg;
+    }
+    Serial.printf("[MP3] %s\n", msg);
 }
 
 static Audio*   audio      = nullptr;
@@ -66,7 +72,8 @@ static void drawList() {
         return;
     }
 
-    int vis = TERM_ROWS - 1;
+    int listBottom = SCREEN_H - (FONT_H + 4); // reserve footer/status area
+    int vis = (listBottom - STATUS_H) / (FONT_H + 2);
     int off = (mp3Sel >= vis) ? mp3Sel - vis + 1 : 0;
     for (int i = 0; i < vis; i++) {
         int idx = i + off;
@@ -110,6 +117,7 @@ static void stopPlayback() {
 static void startPlayback() {
     if (mp3Count == 0) return;
     mp3StatusMsg = "";
+    mp3LastAudioInfo = "";
     stopPlayback();
     M5Cardputer.Speaker.end();
     destroyAudio();
@@ -121,17 +129,31 @@ static void startPlayback() {
         drawList();
         return;
     }
+    // Keep decoder startup lighter after the newer radio features increased heap pressure.
+    audio->setBufsize(4096, 0);
     audio->setPinout(I2S_BCLK_PIN, I2S_LRCLK_PIN, I2S_DOUT_PIN);
     audio->setVolume(mp3Vol);
-    String path = mp3Files[mp3Sel];
-    if (path.startsWith("/")) path.remove(0, 1);
-    path = "/" + path;
-    Serial.printf("[MP3] try open: %s\n", path.c_str());
-    mp3StartMs = millis();
-    if (!audio->connecttoSD(path.c_str())) {
+    String basePath = mp3Files[mp3Sel];
+    if (basePath.startsWith("/")) basePath.remove(0, 1);
+    String pathWithSlash = "/" + basePath;
+    Serial.printf("[MP3] try open: %s\n", pathWithSlash.c_str());
+    if (!SD.exists(pathWithSlash.c_str())) {
+        Serial.printf("[MP3] file missing on SD: %s\n", pathWithSlash.c_str());
         mp3Playing = false;
         mp3Paused  = false;
-        mp3StatusMsg = "Open failed";
+        mp3StatusMsg = "File not found";
+        destroyAudio();
+        M5Cardputer.Speaker.begin();
+        drawMp3Status();
+        drawList();
+        return;
+    }
+    mp3StartMs = millis();
+    bool opened = audio->connecttoFS(SD, pathWithSlash.c_str());
+    if (!opened) {
+        mp3Playing = false;
+        mp3Paused  = false;
+        mp3StatusMsg = mp3LastAudioInfo.length() ? mp3LastAudioInfo : "Open failed";
         audio->stopSong();
         destroyAudio();
         SD.end();

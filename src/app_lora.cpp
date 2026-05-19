@@ -13,6 +13,7 @@ SX1262 g_lora = new Module(LORA_NSS_PIN, LORA_DIO1_PIN, LORA_RST_PIN, LORA_BUSY_
 
 bool g_inited = false;
 bool g_initOk = false;
+bool g_capPresent = false;
 bool g_dirty = true;
 String g_input;
 String g_msgs[8];
@@ -61,11 +62,17 @@ void drawUi() {
 
     d.setTextColor(g_initOk ? 0x33CC66 : C_ERROR, C_BG);
     d.setCursor(8, 20);
-    d.print(g_initOk ? "READY" : "INIT FAILED");
+    if (g_initOk) {
+        d.print("READY");
+    } else if (!g_capPresent) {
+        d.print("NO CAP");
+    } else {
+        d.print("INIT FAILED");
+    }
 
     d.setTextColor(C_DIM, C_BG);
     d.setCursor(60, 20);
-    d.print("868MHz raw text");
+    d.print(g_capPresent ? "868MHz raw text" : "Attach GPS/LoRa cap");
 
     d.drawRect(6, 30, SCREEN_W - 12, 74, C_DIM);
     for (int i = 0; i < g_msgCount; ++i) {
@@ -85,12 +92,35 @@ void drawUi() {
 
     d.setTextColor(C_DIM, C_BG);
     d.setCursor(12, SCREEN_H - 10);
-    d.print("Enter send  fn+D clear  home");
+    d.print(g_initOk ? "Enter send  fn+D clear  home"
+                     : "Back home  cap required for LoRa");
     g_dirty = false;
+}
+
+bool probeCapPresent() {
+    digitalWrite(LORA_RST_PIN, LOW);
+    delay(3);
+    while (digitalRead(LORA_BUSY_PIN) == HIGH) delay(1);
+    digitalWrite(LORA_RST_PIN, HIGH);
+    for (int i = 0; i < 30; ++i) {
+        if (digitalRead(LORA_BUSY_PIN) == HIGH || digitalRead(LORA_DIO1_PIN) == HIGH) {
+            return true;
+        }
+        delay(1);
+    }
+    digitalWrite(LORA_RST_PIN, LOW);
+    return false;
 }
 
 void ensureInit() {
     if (g_inited) return;
+    g_capPresent = probeCapPresent();
+    if (!g_capPresent) {
+        g_initOk = false;
+        pushMsg("LoRa cap not detected");
+        g_inited = true;
+        return;
+    }
     int state = g_lora.begin(868.0, 500.0, 7, 5, 0x34, 10, 10);
     g_initOk = (state == RADIOLIB_ERR_NONE);
     if (g_initOk) {
@@ -135,8 +165,12 @@ void sendMessage() {
 }  // namespace
 
 void appLoraEnter() {
-    ensureInit();
     g_input = "";
+    if (!g_inited) {
+        for (int i = 0; i < 8; ++i) g_msgs[i] = "";
+        g_msgCount = 0;
+    }
+    ensureInit();
     markDirty();
 }
 
