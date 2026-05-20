@@ -22,7 +22,6 @@
 #include "app_hid_keyboard.h"
 #include "app_usb_storage.h"
 #include "app_timer.h"
-#include "app_clock.h"
 #include "app_gps.h"
 #include "app_lora.h"
 #include "app_nfc.h"
@@ -44,7 +43,7 @@ enum class State {
     MODE_PICKER,
     MODE_SWITCH_PROMPT,
     LOCK_SCREEN,
-    LAUNCHER, APP_SSH, APP_MP3, APP_NOTES, APP_SETTINGS, APP_GAMES, APP_FILES, APP_IR_REMOTE, APP_PHOTOS, APP_VOICE_MEMOS, APP_HID_KEYBOARD, APP_USB_STORAGE, APP_TIMER, APP_CALENDAR, APP_GPS, APP_LORA, APP_NFC, APP_PAYLOADS, APP_BLE, APP_DETECTOR, APP_WIFI, APP_CC1101, APP_NRF24, APP_ESPNOW, APP_SD_HEALTH, APP_PLACEHOLDER
+    LAUNCHER, APP_SSH, APP_MP3, APP_NOTES, APP_SETTINGS, APP_GAMES, APP_FILES, APP_IR_REMOTE, APP_PHOTOS, APP_VOICE_MEMOS, APP_HID_KEYBOARD, APP_USB_STORAGE, APP_TIMER, APP_GPS, APP_LORA, APP_NFC, APP_PAYLOADS, APP_BLE, APP_DETECTOR, APP_WIFI, APP_CC1101, APP_NRF24, APP_ESPNOW, APP_SD_HEALTH, APP_PLACEHOLDER
 };
 
 static State state             = State::BOOT;
@@ -59,7 +58,6 @@ static DeviceMode g_modeSwitchTarget = DeviceMode::RADIO;
 static String g_modeSwitchFeature = "";
 static uint32_t g_modePickerReadyAt = 0;
 static bool g_modePickerPrimed = false;
-static bool g_modePickerNeedsFlush = false;
 
 static bool requiresSdMode(AppScene scene) {
     switch (scene) {
@@ -71,7 +69,6 @@ static bool requiresSdMode(AppScene scene) {
         case AppScene::USB_STORAGE:
         case AppScene::PAYLOADS:
         case AppScene::SD_HEALTH:
-        case AppScene::CALENDAR:
             return true;
         default:
             return false;
@@ -210,10 +207,6 @@ void launchApp(AppScene scene) {
             appTimerEnter();
             state = State::APP_TIMER;
             break;
-        case AppScene::CALENDAR:
-            appClockEnter();
-            state = State::APP_CALENDAR;
-            break;
         case AppScene::GPS:
             appGpsEnter();
             state = State::APP_GPS;
@@ -306,20 +299,17 @@ static void drawModePicker() {
 static void handleModePicker() {
     if (dirty) {
         resetSleepTimer();
-        g_modePickerReadyAt = millis() + 380;
+        M5Cardputer.update();  // first flush of boot-time keyboard state
+        delay(25);
+        M5Cardputer.update();  // second pass helps on warm boots before the picker becomes interactive
+        g_modePickerReadyAt = millis() + 320;
         g_modePickerPrimed = true;
-        g_modePickerNeedsFlush = true;
         drawModePicker();
         dirty = false;
-        return;
     }
     if (g_modePickerPrimed) {
+        M5Cardputer.update();
         if (millis() < g_modePickerReadyAt) return;
-        if (g_modePickerNeedsFlush) {
-            M5Cardputer.update();  // single flush only after the warm-up window ends
-            g_modePickerNeedsFlush = false;
-            return;
-        }
         g_modePickerPrimed = false;
     }
     auto ev = readKeys();
@@ -465,6 +455,8 @@ void handleBoot() {
     if (bootLine >= BOOT_LINES && millis() - bootStart > 1500) {
         g_modePickerSel = settingsBootMode();
         resetSleepTimer();
+        delay(80);
+        M5Cardputer.update();
         state = State::MODE_PICKER;
         dirty = true;
     }
@@ -530,7 +522,6 @@ void loop() {
         case State::APP_HID_KEYBOARD: appHidKeyboardLoop(); break;
         case State::APP_USB_STORAGE: appUsbStorageLoop(); break;
         case State::APP_TIMER: appTimerLoop(); break;
-        case State::APP_CALENDAR: appClockLoop(); break;
         case State::APP_GPS: appGpsLoop(); break;
         case State::APP_LORA: appLoraLoop(); break;
         case State::APP_NFC:       appNfcLoop();       break;

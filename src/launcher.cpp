@@ -38,7 +38,6 @@ static const AppEntry APPS[] = {
     { "HID Keybd", 'b', AppScene::HID_KEYBOARD, 0x0050A8 },
     { "USB Store", 'u', AppScene::USB_STORAGE, 0x7A5A00 },
     { "Timer", 't', AppScene::TIMER, 0x006C4D },
-    { "Calendar", 'o', AppScene::CALENDAR, 0x5B6F2C },
     { "GPS", 'x', AppScene::GPS, 0x005E7A },
     { "LoRa", 'l', AppScene::LORA, 0x7A3E00 },
     { "NFC", 'c', AppScene::NFC, 0x006644 },
@@ -52,8 +51,8 @@ static const AppEntry APPS[] = {
     { "SD Health", 'k', AppScene::SD_HEALTH, 0x2D6A4F },
 };
 static constexpr int APP_COUNT = (int)(sizeof(APPS) / sizeof(APPS[0]));
-static const int SD_APP_IDS[] = { 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 16, 23, 4 };
-static const int RADIO_APP_IDS[] = { 0, 13, 14, 15, 17, 18, 19, 20, 21, 22, 4 };
+static const int SD_APP_IDS[] = { 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 15, 22, 4 };
+static const int RADIO_APP_IDS[] = { 0, 12, 13, 14, 16, 17, 18, 19, 20, 21, 4 };
 static constexpr int SD_APP_COUNT = (int)(sizeof(SD_APP_IDS) / sizeof(SD_APP_IDS[0]));
 static constexpr int RADIO_APP_COUNT = (int)(sizeof(RADIO_APP_IDS) / sizeof(RADIO_APP_IDS[0]));
 
@@ -357,14 +356,6 @@ static void iNRF24(int cx, int cy) {
     d.drawFastHLine(cx + 6, cy + 5, 3, 0xFFFFFF);
 }
 
-static void iClock(int cx, int cy) {
-    auto& d = M5Cardputer.Display;
-    d.drawCircle(cx, cy, 10, 0xFFFFFF);
-    d.fillCircle(cx, cy, 2, 0xFFFFFF);
-    d.drawLine(cx, cy, cx, cy - 5, 0xFFFFFF);
-    d.drawLine(cx, cy, cx + 4, cy + 2, 0xFFFFFF);
-}
-
 static void iSdHealth(int cx, int cy) {
     auto& d = M5Cardputer.Display;
     d.drawRoundRect(cx - 12, cy - 9, 24, 16, 3, 0xFFFFFF);
@@ -417,18 +408,17 @@ static void drawCell(int row, int col) {
         case 9: iKeyboard(icx, icy);     break;
         case 10: iUsb(icx, icy);         break;
         case 11: iTimer(icx, icy);       break;
-        case 12: iClock(icx, icy);       break;
-        case 13: iGPS(icx, icy);         break;
-        case 14: iLora(icx, icy);        break;
-        case 15: iNfc(icx, icy);         break;
-        case 16: iPayloads(icx, icy);    break;
-        case 17: iBle(icx, icy);         break;
-        case 18: iDetector(icx, icy);    break;
-        case 19: iWifi(icx, icy);        break;
-        case 20: iCC1101(icx, icy);      break;
-        case 21: iNRF24(icx, icy);       break;
-        case 22: iEspNow(icx, icy);      break;
-        case 23: iSdHealth(icx, icy);    break;
+        case 12: iGPS(icx, icy);         break;
+        case 13: iLora(icx, icy);        break;
+        case 14: iNfc(icx, icy);          break;
+        case 15: iPayloads(icx, icy);    break;
+        case 16: iBle(icx, icy);         break;
+        case 17: iDetector(icx, icy);    break;
+        case 18: iWifi(icx, icy);        break;
+        case 19: iCC1101(icx, icy);      break;
+        case 20: iNRF24(icx, icy);       break;
+        case 21: iEspNow(icx, icy);      break;
+        case 22: iSdHealth(icx, icy);    break;
     }
 
     // Label
@@ -470,7 +460,7 @@ static void drawStatusBar() {
     d.setTextColor(0xDDDDDD, SBG);
     d.setCursor((SCREEN_W - (int)strlen(pageBuf) * FONT_W) / 2, 3);
     d.print(pageBuf);
-    drawBatteryWidget(SBG, SCREEN_W - 43);
+    drawBatteryWidget(SBG);
 }
 
 // ── Public ─────────────────────────────────────────────────────────────────
