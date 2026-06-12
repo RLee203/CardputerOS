@@ -34,6 +34,8 @@
 #include "app_nrf24.h"
 #include "app_espnow.h"
 #include "app_sd_health.h"
+#include "app_calc.h"
+#include "app_firmware.h"
 
 Terminal term;
 
@@ -43,7 +45,7 @@ enum class State {
     MODE_PICKER,
     MODE_SWITCH_PROMPT,
     LOCK_SCREEN,
-    LAUNCHER, APP_SSH, APP_MP3, APP_NOTES, APP_SETTINGS, APP_GAMES, APP_FILES, APP_IR_REMOTE, APP_PHOTOS, APP_VOICE_MEMOS, APP_HID_KEYBOARD, APP_USB_STORAGE, APP_TIMER, APP_GPS, APP_LORA, APP_NFC, APP_PAYLOADS, APP_BLE, APP_DETECTOR, APP_WIFI, APP_CC1101, APP_NRF24, APP_ESPNOW, APP_SD_HEALTH, APP_PLACEHOLDER
+    LAUNCHER, APP_SSH, APP_MP3, APP_NOTES, APP_SETTINGS, APP_GAMES, APP_FILES, APP_IR_REMOTE, APP_PHOTOS, APP_VOICE_MEMOS, APP_HID_KEYBOARD, APP_USB_STORAGE, APP_TIMER, APP_GPS, APP_LORA, APP_NFC, APP_PAYLOADS, APP_BLE, APP_DETECTOR, APP_WIFI, APP_CC1101, APP_NRF24, APP_ESPNOW, APP_SD_HEALTH, APP_CALC, APP_FIRMWARE, APP_PLACEHOLDER
 };
 
 static State state             = State::BOOT;
@@ -69,6 +71,7 @@ static bool requiresSdMode(AppScene scene) {
         case AppScene::USB_STORAGE:
         case AppScene::PAYLOADS:
         case AppScene::SD_HEALTH:
+        case AppScene::FIRMWARE:
             return true;
         default:
             return false;
@@ -140,6 +143,7 @@ static void setState(State s) { state = s; dirty = true; inputBuf = ""; inputCur
 
 void goHome() {
     resumeWifiAfterSd();
+    bgAudioResume();   // restart audio if it was suspended for an SD app
     if (settingsLockEnabled() && !g_sessionUnlocked) {
         appLockEnter();
         state = State::LOCK_SCREEN;
@@ -150,6 +154,11 @@ void goHome() {
 }
 
 void launchApp(AppScene scene) {
+    // Suspend background audio before any SD app that would reinit the SD bus.
+    // MP3 app handles its own audio lifecycle, so it's excluded here.
+    if (requiresSdMode(scene) && scene != AppScene::MP3) {
+        bgAudioSuspend();
+    }
     if (requiresSdMode(scene) && !isSdMode()) {
         requestModeSwitch(DeviceMode::SD, "This app");
         return;
@@ -251,6 +260,14 @@ void launchApp(AppScene scene) {
             appSdHealthEnter();
             state = State::APP_SD_HEALTH;
             break;
+        case AppScene::CALC:
+            appCalcEnter();
+            state = State::APP_CALC;
+            break;
+        case AppScene::FIRMWARE:
+            appFirmwareEnter();
+            state = State::APP_FIRMWARE;
+            break;
     }
 }
 
@@ -264,7 +281,7 @@ static void drawModePicker() {
     d.setFont(&fonts::Font0);
     d.setTextSize(2);
     d.setTextColor(C_FG, C_BG);
-    const char* title = "Cardputer OS 2.3";
+    const char* title = "Cardputer OS 2.4";
     d.setCursor((SCREEN_W - (int)strlen(title) * FONT_W * 2) / 2, 8);
     d.print(title);
     d.setTextSize(1);
@@ -282,18 +299,24 @@ static void drawModePicker() {
         d.fillRoundRect(x, y, 100, 44, 6, box);
         d.drawRoundRect(x, y, 100, 44, 6, sel ? 0xFFFFFF : C_DIM);
         d.setTextColor(0xFFFFFF, box);
-        d.setCursor(x + 22, y + 8);
-        d.print(mode == DeviceMode::SD ? "MEDIA" : "RADIO");
+        {
+            const char* t = (mode == DeviceMode::SD) ? "MEDIA" : "RADIO";
+            d.setCursor(x + (100 - (int)strlen(t) * FONT_W) / 2, y + 8);
+            d.print(t);
+        }
         d.setTextColor(sel ? 0xFFFFFF : C_DIM, box);
-        d.setCursor(x + 14, y + 24);
-        d.print(mode == DeviceMode::SD ? "Local tools" : "Wireless tools");
+        {
+            const char* s = (mode == DeviceMode::SD) ? "Local tools" : "Wireless tools";
+            d.setCursor(x + (100 - (int)strlen(s) * FONT_W) / 2, y + 24);
+            d.print(s);
+        }
     }
 
     d.setTextColor(C_DIM, C_BG);
     d.setCursor(14, 102);
-    d.print("Left/Right = select");
+    d.print("Left/Right=select  Enter=boot");
     d.setCursor(14, 114);
-    d.print("Enter = boot mode");
+    d.print("fn+M = switch mode in launcher");
 }
 
 static void handleModePicker() {
@@ -424,7 +447,7 @@ void handleBoot() {
         // Version / tagline
         d.setTextSize(1);
         d.setTextColor(C_DIM, C_BG);
-        const char* ver = "v2.3  --  M5Stack Cardputer";
+        const char* ver = "v2.4  --  M5Stack Cardputer";
         int vw = strlen(ver) * FONT_W;
         d.setCursor((SCREEN_W - vw) / 2, 56);
         d.print(ver);
@@ -496,6 +519,10 @@ void setup() {
 }
 
 void loop() {
+    // Service background audio on every tick (no-op when inactive or suspended).
+    // Skip when MP3 app is in foreground — it services audio->loop() itself.
+    if (state != State::APP_MP3) bgAudioLoop();
+
     switch (state) {
         case State::BOOT:         handleBoot();        break;
         case State::MODE_PICKER:  handleModePicker();  break;
@@ -532,7 +559,9 @@ void loop() {
         case State::APP_CC1101:     appCc1101Loop();    break;
         case State::APP_NRF24:      appNrf24Loop();     break;
         case State::APP_ESPNOW:     appEspnowLoop();    break;
-        case State::APP_SD_HEALTH:  appSdHealthLoop();  break;
+        case State::APP_SD_HEALTH:  appSdHealthLoop();   break;
+        case State::APP_CALC:       appCalcLoop();       break;
+        case State::APP_FIRMWARE:   appFirmwareLoop();   break;
         case State::APP_PLACEHOLDER: appPlaceholderLoop(); break;
     }
 

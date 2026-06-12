@@ -2,6 +2,7 @@
 #include "nav.h"
 #include "input.h"
 #include "config.h"
+#include "app_mp3.h"
 #include <M5Cardputer.h>
 #include <WiFi.h>
 
@@ -49,10 +50,13 @@ static const AppEntry APPS[] = {
     { "nRF24",  'z', AppScene::NRF24,  0x003355 },
     { "ESP-NOW", 'i', AppScene::ESPNOW, 0x005566 },
     { "SD Health", 'k', AppScene::SD_HEALTH, 0x2D6A4F },
+    { "Calc",     'j', AppScene::CALC,      0x1A3A5C },
+    { "Firmware", 'o', AppScene::FIRMWARE,  0x4A1A00 },
 };
 static constexpr int APP_COUNT = (int)(sizeof(APPS) / sizeof(APPS[0]));
-static const int SD_APP_IDS[] = { 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 15, 22, 4 };
-static const int RADIO_APP_IDS[] = { 0, 12, 13, 14, 16, 17, 18, 19, 20, 21, 4 };
+// 23=Calc (both modes), 24=Firmware (SD only)
+static const int SD_APP_IDS[] = { 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 15, 22, 23, 24, 4 };
+static const int RADIO_APP_IDS[] = { 0, 12, 13, 14, 16, 17, 18, 19, 20, 21, 23, 4 };
 static constexpr int SD_APP_COUNT = (int)(sizeof(SD_APP_IDS) / sizeof(SD_APP_IDS[0]));
 static constexpr int RADIO_APP_COUNT = (int)(sizeof(RADIO_APP_IDS) / sizeof(RADIO_APP_IDS[0]));
 
@@ -356,6 +360,30 @@ static void iNRF24(int cx, int cy) {
     d.drawFastHLine(cx + 6, cy + 5, 3, 0xFFFFFF);
 }
 
+static void iCalc(int cx, int cy) {
+    auto& d = M5Cardputer.Display;
+    d.drawRoundRect(cx - 12, cy - 11, 24, 22, 2, 0xFFFFFF);
+    d.fillRect(cx - 9, cy - 8, 18, 6, 0xFFFFFF);
+    // operator symbols
+    d.fillCircle(cx - 5, cy + 3, 1, 0xFFFFFF);
+    d.fillCircle(cx + 5, cy + 3, 1, 0xFFFFFF);
+    d.fillRect(cx - 2, cy + 2, 4, 2, 0xFFFFFF);
+    d.fillRect(cx - 2, cy + 6, 4, 2, 0xFFFFFF);
+}
+
+static void iFirmware(int cx, int cy) {
+    auto& d = M5Cardputer.Display;
+    // Chip with downward flash arrow
+    d.drawRoundRect(cx - 8, cy - 4, 16, 12, 2, 0xFFFFFF);
+    d.drawFastHLine(cx - 11, cy,     3, 0xFFFFFF);
+    d.drawFastHLine(cx +  8, cy,     3, 0xFFFFFF);
+    d.drawFastHLine(cx - 11, cy + 4, 3, 0xFFFFFF);
+    d.drawFastHLine(cx +  8, cy + 4, 3, 0xFFFFFF);
+    // Arrow downward into chip
+    d.fillTriangle(cx - 4, cy - 11, cx + 4, cy - 11, cx, cy - 6, 0xFFAA00);
+    d.fillRect(cx - 1, cy - 14, 2, 5, 0xFFAA00);
+}
+
 static void iSdHealth(int cx, int cy) {
     auto& d = M5Cardputer.Display;
     d.drawRoundRect(cx - 12, cy - 9, 24, 16, 3, 0xFFFFFF);
@@ -419,6 +447,8 @@ static void drawCell(int row, int col) {
         case 20: iNRF24(icx, icy);       break;
         case 21: iEspNow(icx, icy);      break;
         case 22: iSdHealth(icx, icy);    break;
+        case 23: iCalc(icx, icy);        break;
+        case 24: iFirmware(icx, icy);    break;
     }
 
     // Label
@@ -460,6 +490,11 @@ static void drawStatusBar() {
     d.setTextColor(0xDDDDDD, SBG);
     d.setCursor((SCREEN_W - (int)strlen(pageBuf) * FONT_W) / 2, 3);
     d.print(pageBuf);
+    if (bgAudioIsActive()) {
+        d.setTextColor(0xFFAA00, SBG);
+        d.setCursor(SCREEN_W - 46, 3);
+        d.print("(*)");
+    }
     drawBatteryWidget(SBG);
 }
 
@@ -474,7 +509,14 @@ static void drawAll() {
 }
 
 void launcherEnter() {
-    selRow = 0; selCol = 0; selPage = 0;
+    // Reset selection only when mode changes (SD↔Radio switch)
+    static bool prevSdMode = false;
+    bool curSdMode = isSdMode();
+    if (curSdMode != prevSdMode) {
+        selRow = 0; selCol = 0; selPage = 0;
+        prevSdMode = curSdMode;
+    }
+    clampSelectionForPage();
     drawAll();
 }
 
@@ -511,6 +553,17 @@ void launcherLoop() {
             moveToPageStart();
             drawAll();
         }
+    }
+
+    if (ev.fnKey) {
+        for (char c : ev.chars) {
+            if (tolower((unsigned char)c) == 'm') {
+                DeviceMode target = isSdMode() ? DeviceMode::RADIO : DeviceMode::SD;
+                requestModeSwitch(target, "Mode switch");
+                return;
+            }
+        }
+        // fall through — lets fn+arrow navigation reach the redraw below
     }
 
     if (!ev.fnKey) {

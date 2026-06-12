@@ -191,10 +191,13 @@ void appFilesLoop() {
 
     if (filesScene == FilesScene::DELETE_CONFIRM) {
         if (ev.enter) {
-            if (filesSource == FilesSource::SOURCE_SD)
-                SD.remove(fileNames[delTarget].c_str());
-            else
+            if (filesSource == FilesSource::SOURCE_SD) {
+                String sdPath = fileNames[delTarget];
+                if (!sdPath.startsWith("/")) sdPath = "/" + sdPath;
+                SD.remove(sdPath.c_str());
+            } else {
                 LittleFS.remove(fileNames[delTarget].c_str());
+            }
             if (fileSel >= fileCount - 1 && fileSel > 0) fileSel--;
             loadFileList();
             filesScene = FilesScene::FILE_LIST;

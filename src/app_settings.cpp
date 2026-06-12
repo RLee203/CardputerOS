@@ -181,6 +181,14 @@ static void drawMenu() {
             case 0: {
                 snprintf(buf, sizeof(buf), "Brightness: %d", brightness);
                 d.print(buf);
+                if (sel) {
+                    // Small bar showing current brightness level
+                    constexpr int BX = 4, BY_OFF = MENU_ITEM_H - 4;
+                    constexpr int BW = SCREEN_W - 8, BH = 2;
+                    int fill = (int)((uint32_t)BW * brightness / 255);
+                    d.fillRect(BX, y + BY_OFF, BW, BH, C_DIM);
+                    d.fillRect(BX, y + BY_OFF, fill, BH, C_INPUT);
+                }
                 break;
             }
             case 1:
@@ -261,8 +269,8 @@ static void handleMenu() {
 
     // Brightness: fn+, = dim, fn+/ = bright
     if (settSel == 0) {
-        if (ev.left)  { brightness = max(10,  brightness - 10); M5Cardputer.Display.setBrightness(brightness); saveSettings(); settDirty = true; }
-        if (ev.right) { brightness = min(255, brightness + 10); M5Cardputer.Display.setBrightness(brightness); saveSettings(); settDirty = true; }
+        if (ev.left)  { brightness = max(10,  brightness - 20); M5Cardputer.Display.setBrightness(brightness); saveSettings(); settDirty = true; }
+        if (ev.right) { brightness = min(255, brightness + 20); M5Cardputer.Display.setBrightness(brightness); saveSettings(); settDirty = true; }
     }
 
     // Text Color: fn+, / fn+/ cycles themes

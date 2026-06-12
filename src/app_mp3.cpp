@@ -28,6 +28,11 @@ static uint8_t  mp3Vol     = 12;    // 0-21
 static unsigned long mp3StartMs = 0;
 static String   mp3StatusMsg;
 
+// Background playback state
+static bool g_bgRunning   = false;  // audio running outside the MP3 app
+static bool g_bgSuspended = false;  // suspended while an SD app is open
+static int  g_bgSuspSel   = -1;    // track to resume after SD app closes
+
 static void destroyAudio() {
     if (audio) {
         delete audio;
@@ -184,7 +189,9 @@ static void playPrev() {
 
 void appMp3Enter() {
     suspendWifiForSd();
-    stopPlayback();
+    stopPlayback();           // safely closes any open audio file before SD.end()
+    g_bgRunning   = false;    // MP3 app takes foreground control
+    g_bgSuspended = false;
     mp3Sel = 0; mp3Playing = false; mp3Paused = false; mp3Count = 0;
     mp3StatusMsg = "";
     digitalWrite(LORA_NSS_PIN, HIGH);
@@ -236,13 +243,20 @@ void appMp3Loop() {
     auto ev = readKeys();
     if (!ev.changed) return;
 
-    // fn+backspace = home (always)
-    if (ev.back) { stopPlayback(); SD.end(); goHome(); return; }
-
-    // fn+Q = home (backup)
+    // fn+backspace / fn+Q = home; keep audio playing in background if a song is active
+    auto doBack = [&]() {
+        if (mp3Playing || mp3Paused) {
+            g_bgRunning = true;   // audio stays alive; main loop will call bgAudioLoop()
+        } else {
+            stopPlayback();
+            SD.end();
+        }
+        goHome();
+    };
+    if (ev.back) { doBack(); return; }
     if (ev.fnKey) {
         for (char c : ev.chars)
-            if (c == 'q' || c == 'Q') { stopPlayback(); SD.end(); goHome(); return; }
+            if (c == 'q' || c == 'Q') { doBack(); return; }
     }
 
     // Volume with + and - (always available, regardless of fn state)
@@ -279,5 +293,54 @@ void appMp3Loop() {
         if (ev.up   && mp3Sel > 0)            { mp3Sel--; drawList(); }
         if (ev.down && mp3Sel < mp3Count - 1) { mp3Sel++; drawList(); }
         if (ev.enter && mp3Count > 0)         startPlayback();
+    }
+}
+
+// ── Background audio API ───────────────────────────────────────────────────
+
+bool bgAudioIsActive() {
+    return g_bgRunning && (mp3Playing || mp3Paused);
+}
+
+void bgAudioLoop() {
+    if (!g_bgRunning || g_bgSuspended) return;
+    if (mp3Playing && audio) {
+        audio->loop();
+        if (millis() - mp3StartMs > 2000 && !audio->isRunning()) {
+            // Track ended — advance and keep playing
+            if (mp3Count > 1) {
+                mp3Sel = (mp3Sel + 1) % mp3Count;
+                startPlayback();
+            } else {
+                stopPlayback();
+                g_bgRunning = false;
+            }
+        }
+    }
+}
+
+void bgAudioSuspend() {
+    if (!g_bgRunning || g_bgSuspended) return;
+    g_bgSuspSel   = mp3Sel;
+    g_bgSuspended = true;
+    if (audio && mp3Playing) audio->stopSong();
+    destroyAudio();
+    mp3Playing = false;
+    mp3Paused  = false;
+    // Caller is responsible for SD.end() / SD.begin()
+}
+
+void bgAudioResume() {
+    if (!g_bgRunning || !g_bgSuspended) return;
+    g_bgSuspended = false;
+    if (g_bgSuspSel >= 0) mp3Sel = g_bgSuspSel;
+    // Reinit SD and restart the track
+    SD.end();
+    delay(20);
+    sdOk = SD.begin(SD_CS_PIN, SPI, 25000000);
+    if (sdOk && mp3Count > 0) {
+        startPlayback();
+    } else {
+        g_bgRunning = false;  // can't resume — give up
     }
 }

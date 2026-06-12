@@ -330,5 +330,7 @@ void appGamesLoop() {
     if (now - lastFrame >= FRAME_MS) {
         lastFrame = now;
         gb_run_frame(&gb);
+        yield();  // feed FreeRTOS WDT and scheduler between frames
+        if (gbScene == GBScene::ERROR) { showError(); return; }
     }
 }
