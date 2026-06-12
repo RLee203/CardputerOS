@@ -2,12 +2,12 @@
 
 CardputerOS is a split-mode firmware for the **M5Stack Cardputer** built with PlatformIO and Arduino.
 
-## CardputerOS 2.3
+## CardputerOS 2.4
 
-`2.3` keeps the restart-based mode split that separates local SD/media tools from radio-heavy tools so the Cardputer stays stable.
+`2.4` adds background audio, a calculator, an on-device firmware installer, and a new dual-OTA partition layout — while keeping the restart-based mode split that separates local SD/media tools from radio-heavy tools so the Cardputer stays stable.
 
-- `Multimedia`: MP3, Notes, Games, Files, IR Remote, Photos, Voice Memos, HID Keyboard, USB Storage, Timer, Payloads, SD Health, Settings
-- `Radio`: SSH, GPS, LoRa, NFC, BLE, Detector, WiFi, CC1101, nRF24, ESP-NOW, Settings
+- `Multimedia`: MP3, Notes, Games, Files, IR Remote, Photos, Voice Memos, HID Keyboard, USB Storage, Timer, Payloads, SD Health, Calculator, Firmware, Settings
+- `Radio`: SSH, GPS, LoRa, NFC, BLE, Detector, WiFi, CC1101, nRF24, ESP-NOW, Calculator, Settings
 
 ## Highlights
 
@@ -28,7 +28,7 @@ CardputerOS is a split-mode firmware for the **M5Stack Cardputer** built with Pl
 
 ### Multimedia
 
-- MP3
+- MP3 (background playback supported)
 - Notes
 - Games
 - Files
@@ -40,6 +40,8 @@ CardputerOS is a split-mode firmware for the **M5Stack Cardputer** built with Pl
 - Timer
 - Payloads
 - SD Health
+- Calculator
+- Firmware Installer
 - Settings
 
 ### Radio
@@ -54,12 +56,13 @@ CardputerOS is a split-mode firmware for the **M5Stack Cardputer** built with Pl
 - CC1101
 - nRF24
 - ESP-NOW
+- Calculator
 - Settings
 
 ## File Support
 
 | App | Format | Location |
-|-----|--------|----------|
+| --- | --- | --- |
 | MP3 | `.mp3` | microSD root |
 | Photos | `.jpg`, `.jpeg`, `.png`, `.bmp` | microSD root |
 | Game Boy | `.gb`, `.gbc` | microSD root |
@@ -70,16 +73,19 @@ CardputerOS is a split-mode firmware for the **M5Stack Cardputer** built with Pl
 | NFC Dumps | `.txt` | microSD `/nfc/` |
 | Payloads | `.txt`, `.ds` | microSD `/payloads/` |
 | BLE Wardriving | `.csv` | microSD `/ble/` |
+| Firmware Installer | `.bin` | microSD root |
 
 ## Flashing
 
 ### Prebuilt
 
-Download `cardputer-os-v2.3-merged.bin` from the [Releases](../../releases) page and flash:
+Download `cardputer-os-v2.4-merged.bin` from the [Releases](../../releases) page and flash:
 
 ```bash
-esptool.py --chip esp32s3 --port YOUR_PORT write_flash 0x0 cardputer-os-v2.3-merged.bin
+esptool.py --chip esp32s3 --port YOUR_PORT write_flash 0x0 cardputer-os-v2.4-merged.bin
 ```
+
+> **Note:** v2.4 uses a new dual-OTA partition layout. Flashing the merged binary for the first time will reset saved settings (brightness, theme, lock PIN, boot mode) to defaults. This is a one-time migration — settings persist normally after that.
 
 ### Build From Source
 
@@ -103,6 +109,20 @@ pio run --target upload
 - Cardputer `G` -> receiver `GND`
 - Cardputer `5V` -> receiver `VCC`
 - Cardputer `G2` / `GPIO2` -> receiver `OUT`
+
+## 2.4 Notes
+
+- Added **background MP3** — leave the MP3 app while a track is playing and music continues in the background. A `(*)` indicator appears in the launcher status bar. Music auto-suspends when an SD-dependent app opens and resumes from the same position when you return home. Apps that don't use the SD card (Notes, Calculator, Timer, Settings) never interrupt playback.
+- Added **Calculator** app (hotkey `j`, available in both modes) — recursive-descent expression parser with live preview, operator precedence, `x`=multiply shortcut, and scientific functions: `sqrt(`, `sq(`, `abs(`, `pow(x,y)`, `log(`, `ln(`, `floor(`, `ceil(`
+- Added **Firmware Installer** app (hotkey `o`, Multimedia mode only) — scans microSD root for `.bin` files, auto-detects merged vs app-only binaries, and flashes via OTA with a progress bar. Requires the v2.4 dual-OTA partition layout.
+- Added **dual-OTA partition table** (`partitions.csv`) — two 2 MB OTA slots + 3.9 MB LittleFS on 8 MB flash. Required for the Firmware Installer; enables flashing other ESP32-S3 firmware directly from the device.
+- Added **`fn+M` mode-switch shortcut** in the launcher — toggles between Multimedia and Radio mode without navigating back to the boot screen.
+- Fixed emulator freeze — added `yield()` after each Game Boy frame to prevent FreeRTOS watchdog resets during intensive emulation.
+- Fixed SD file delete — `SD.remove()` path now correctly includes the leading `/`.
+- Fixed mode picker text centering — MEDIA/RADIO labels are now dynamically centred.
+- Fixed brightness control — added a visual fill bar and doubled the step size so changes are visible.
+- Fixed launcher navigation highlight — `fn+arrow` keys were being swallowed by the `fn+M` handler, preventing selection box updates.
+- Fixed background audio heap fragmentation — `Audio` object is now reused across track transitions rather than destroyed and recreated, eliminating "mp3decoder could not be initialized" errors after long sessions.
 
 ## 2.3 Notes
 
