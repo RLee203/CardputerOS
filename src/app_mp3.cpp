@@ -29,9 +29,10 @@ static unsigned long mp3StartMs = 0;
 static String   mp3StatusMsg;
 
 // Background playback state
-static bool g_bgRunning   = false;  // audio running outside the MP3 app
-static bool g_bgSuspended = false;  // suspended while an SD app is open
-static int  g_bgSuspSel   = -1;    // track to resume after SD app closes
+static bool     g_bgRunning   = false;  // audio running outside the MP3 app
+static bool     g_bgSuspended = false;  // suspended while an SD app is open
+static int      g_bgSuspSel   = -1;    // track to resume after SD app closes
+static uint32_t g_bgSuspPos   = 0;     // file byte offset when suspended (for seamless resume)
 
 static void destroyAudio() {
     if (audio) {
@@ -302,15 +303,54 @@ bool bgAudioIsActive() {
     return g_bgRunning && (mp3Playing || mp3Paused);
 }
 
+// Silent playback start — no display updates, no SD reinit.
+// SD must already be initialised. Reuses the existing Audio object when
+// possible (track transitions) to avoid heap churn; only allocates a new
+// one when audio==nullptr (first start or after a suspend/resume cycle).
+static bool bgStartPlayback() {
+    String path = "/" + mp3Files[mp3Sel];
+    if (mp3Count == 0 || !SD.exists(path.c_str())) {
+        destroyAudio();
+        return false;
+    }
+    if (!audio) {
+        // First start or post-suspend — must allocate a fresh Audio object
+        M5Cardputer.Speaker.end();
+        audio = new Audio();
+        if (!audio) return false;
+        audio->setBufsize(4096, 0);
+        audio->setPinout(I2S_BCLK_PIN, I2S_LRCLK_PIN, I2S_DOUT_PIN);
+        audio->setVolume(mp3Vol);
+    } else {
+        // Track transition — reuse existing object, no heap alloc
+        audio->stopSong();
+    }
+    uint32_t resumePos = g_bgSuspPos;
+    g_bgSuspPos = 0;
+    mp3StartMs = millis();
+    if (!audio->connecttoFS(SD, path.c_str(), resumePos)) {
+        destroyAudio();
+        return false;
+    }
+    mp3Playing = true;
+    mp3Paused  = false;
+    return true;
+}
+
 void bgAudioLoop() {
     if (!g_bgRunning || g_bgSuspended) return;
     if (mp3Playing && audio) {
         audio->loop();
         if (millis() - mp3StartMs > 2000 && !audio->isRunning()) {
-            // Track ended — advance and keep playing
+            // Track ended — advance silently, no UI draw
             if (mp3Count > 1) {
                 mp3Sel = (mp3Sel + 1) % mp3Count;
-                startPlayback();
+                g_bgSuspPos = 0;
+                if (!bgStartPlayback()) {
+                    stopPlayback();
+                    g_bgRunning = false;
+                    M5Cardputer.Speaker.begin();
+                }
             } else {
                 stopPlayback();
                 g_bgRunning = false;
@@ -322,25 +362,28 @@ void bgAudioLoop() {
 void bgAudioSuspend() {
     if (!g_bgRunning || g_bgSuspended) return;
     g_bgSuspSel   = mp3Sel;
+    g_bgSuspPos   = (audio && mp3Playing) ? audio->getFilePos() : 0;
     g_bgSuspended = true;
     if (audio && mp3Playing) audio->stopSong();
     destroyAudio();
     mp3Playing = false;
     mp3Paused  = false;
-    // Caller is responsible for SD.end() / SD.begin()
+    M5Cardputer.Speaker.begin();  // hand I2S back cleanly so other apps can use Speaker
 }
 
 void bgAudioResume() {
     if (!g_bgRunning || !g_bgSuspended) return;
     g_bgSuspended = false;
     if (g_bgSuspSel >= 0) mp3Sel = g_bgSuspSel;
-    // Reinit SD and restart the track
     SD.end();
     delay(20);
     sdOk = SD.begin(SD_CS_PIN, SPI, 25000000);
-    if (sdOk && mp3Count > 0) {
-        startPlayback();
+    if (sdOk && bgStartPlayback()) {
+        // Audio running — I2S is held by Audio, Speaker stays off
     } else {
-        g_bgRunning = false;  // can't resume — give up
+        // Resume failed silently (file gone, heap full, etc.) — restore clean I2S state
+        destroyAudio();
+        g_bgRunning = false;
+        M5Cardputer.Speaker.begin();
     }
 }
