@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/robes/.platformio/packages/framework-arduinoespressif32/tools/partitions/**)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(find ~/.platformio -name \"boot_app0.bin\" 2>/dev/null | head -3)",
+      "Read(//c/Users/robes/.platformio/**)"
+    ]
+  }
+}

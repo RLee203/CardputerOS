@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git tag *)",
+      "Bash(gh release create v2.4 cardputer-os-v2.4-merged.bin --title 'CardputerOS v2.4' --notes ' *)"
+    ]
+  }
+}
