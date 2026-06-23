@@ -1,10 +1,10 @@
-# CardputerOS
+﻿# CardputerOS
 
 CardputerOS is a split-mode ESP32-S3 firmware project with active builds for the **M5Stack Cardputer** and the **LILYGO T-Embed CC1101**, built with PlatformIO and Arduino.
 
 ## CardputerOS 2.4
 
-`2.4` adds background audio, a calculator, an on-device firmware installer, and a new dual-OTA partition layout — while keeping the restart-based mode split that separates local SD/media tools from radio-heavy tools so the Cardputer stays stable.
+`2.4` adds background audio, a calculator, an on-device firmware installer, and a new dual-OTA partition layout â€” while keeping the restart-based mode split that separates local SD/media tools from radio-heavy tools so the Cardputer stays stable.
 
 - `Multimedia`: MP3, Notes, Games, Files, IR Remote, Photos, Voice Memos, HID Keyboard, USB Storage, Timer, Payloads, SD Health, Calculator, Firmware, Settings
 - `Radio`: SSH, GPS, LoRa, NFC, BLE, Detector, WiFi, CC1101, nRF24, ESP-NOW, Calculator, Settings
@@ -80,28 +80,29 @@ CardputerOS is a split-mode ESP32-S3 firmware project with active builds for the
 ### Prebuilt
 
 Prebuilt artifacts live in [`releases/v2.4`](./releases/v2.4):
+Prebuilt artifacts are split by device:
 
-- `cardputer/cardputer-os-v2.4-merged.bin`
-- `tembed/tembed-os-v2.4-debug-merged.bin`
-- `tembed/bootloader.bin`, `tembed/partitions.bin`, `tembed/firmware.bin`
+- Cardputer: [`releases/v2.4`](./releases/v2.4)
+- T-Embed CC1101: [`releases/tembed-v2.4.1`](./releases/tembed-v2.4.1)
 
-Flash a merged image at `0x0`:
+Flash Cardputer with the merged image:
 
 ```bash
 esptool.py --chip esp32s3 --port YOUR_PORT write_flash 0x0 releases/v2.4/cardputer/cardputer-os-v2.4-merged.bin
 ```
 
+Flash T-Embed with the merged image:
+
 ```bash
-esptool.py --chip esp32s3 --port YOUR_PORT write_flash 0x0 releases/v2.4/tembed/tembed-os-v2.4-debug-merged.bin
+esptool.py --chip esp32s3 --port YOUR_PORT write_flash 0x0 releases/tembed-v2.4.1/tembed-os-v2.4.1-debug-merged.bin
 ```
 
 Flash the split T-Embed bins if needed:
 
 ```bash
-esptool.py --chip esp32s3 --port YOUR_PORT write_flash 0x0000 releases/v2.4/tembed/bootloader.bin 0x8000 releases/v2.4/tembed/partitions.bin 0x10000 releases/v2.4/tembed/firmware.bin
+esptool.py --chip esp32s3 --port YOUR_PORT write_flash 0x0000 releases/tembed-v2.4.1/bootloader.bin 0x8000 releases/tembed-v2.4.1/partitions.bin 0x10000 releases/tembed-v2.4.1/firmware.bin
 ```
-
-> **Note:** v2.4 uses a new dual-OTA partition layout. Flashing a merged binary for the first time will reset saved settings (brightness, theme, lock PIN, boot mode) to defaults. This is a one-time migration — settings persist normally after that.
+> **Note:** v2.4 uses a new dual-OTA partition layout. Flashing a merged binary for the first time will reset saved settings (brightness, theme, lock PIN, boot mode) to defaults. This is a one-time migration â€” settings persist normally after that.
 > **Note:** the packaged T-Embed build currently keeps RF debug logging enabled because it is the validated CC1101 tuning backup.
 
 ### Build From Source
@@ -129,17 +130,17 @@ pio run --target upload
 
 ## 2.4 Notes
 
-- Added **background MP3** — leave the MP3 app while a track is playing and music continues in the background. A `(*)` indicator appears in the launcher status bar. Music auto-suspends when an SD-dependent app opens and resumes from the same position when you return home. Apps that don't use the SD card (Notes, Calculator, Timer, Settings) never interrupt playback.
-- Added **Calculator** app (hotkey `j`, available in both modes) — recursive-descent expression parser with live preview, operator precedence, `x`=multiply shortcut, and scientific functions: `sqrt(`, `sq(`, `abs(`, `pow(x,y)`, `log(`, `ln(`, `floor(`, `ceil(`
-- Added **Firmware Installer** app (hotkey `o`, Multimedia mode only) — scans microSD root for `.bin` files, auto-detects merged vs app-only binaries, and flashes via OTA with a progress bar. Requires the v2.4 dual-OTA partition layout.
-- Added **dual-OTA partition table** (`partitions.csv`) — two 2 MB OTA slots + 3.9 MB LittleFS on 8 MB flash. Required for the Firmware Installer; enables flashing other ESP32-S3 firmware directly from the device.
-- Added **`fn+M` mode-switch shortcut** in the launcher — toggles between Multimedia and Radio mode without navigating back to the boot screen.
-- Fixed emulator freeze — added `yield()` after each Game Boy frame to prevent FreeRTOS watchdog resets during intensive emulation.
-- Fixed SD file delete — `SD.remove()` path now correctly includes the leading `/`.
-- Fixed mode picker text centering — MEDIA/RADIO labels are now dynamically centred.
-- Fixed brightness control — added a visual fill bar and doubled the step size so changes are visible.
-- Fixed launcher navigation highlight — `fn+arrow` keys were being swallowed by the `fn+M` handler, preventing selection box updates.
-- Fixed background audio heap fragmentation — `Audio` object is now reused across track transitions rather than destroyed and recreated, eliminating "mp3decoder could not be initialized" errors after long sessions.
+- Added **background MP3** â€” leave the MP3 app while a track is playing and music continues in the background. A `(*)` indicator appears in the launcher status bar. Music auto-suspends when an SD-dependent app opens and resumes from the same position when you return home. Apps that don't use the SD card (Notes, Calculator, Timer, Settings) never interrupt playback.
+- Added **Calculator** app (hotkey `j`, available in both modes) â€” recursive-descent expression parser with live preview, operator precedence, `x`=multiply shortcut, and scientific functions: `sqrt(`, `sq(`, `abs(`, `pow(x,y)`, `log(`, `ln(`, `floor(`, `ceil(`
+- Added **Firmware Installer** app (hotkey `o`, Multimedia mode only) â€” scans microSD root for `.bin` files, auto-detects merged vs app-only binaries, and flashes via OTA with a progress bar. Requires the v2.4 dual-OTA partition layout.
+- Added **dual-OTA partition table** (`partitions.csv`) â€” two 2 MB OTA slots + 3.9 MB LittleFS on 8 MB flash. Required for the Firmware Installer; enables flashing other ESP32-S3 firmware directly from the device.
+- Added **`fn+M` mode-switch shortcut** in the launcher â€” toggles between Multimedia and Radio mode without navigating back to the boot screen.
+- Fixed emulator freeze â€” added `yield()` after each Game Boy frame to prevent FreeRTOS watchdog resets during intensive emulation.
+- Fixed SD file delete â€” `SD.remove()` path now correctly includes the leading `/`.
+- Fixed mode picker text centering â€” MEDIA/RADIO labels are now dynamically centred.
+- Fixed brightness control â€” added a visual fill bar and doubled the step size so changes are visible.
+- Fixed launcher navigation highlight â€” `fn+arrow` keys were being swallowed by the `fn+M` handler, preventing selection box updates.
+- Fixed background audio heap fragmentation â€” `Audio` object is now reused across track transitions rather than destroyed and recreated, eliminating "mp3decoder could not be initialized" errors after long sessions.
 
 ## 2.3 Notes
 
@@ -169,4 +170,6 @@ pio run --target upload
 ## License
 
 MIT
+
+
 
