@@ -26,7 +26,7 @@ constexpr int MENU_COUNT = sizeof(MENU_ITEMS) / sizeof(MENU_ITEMS[0]);
 
 HardwareSerial gpsSerial(2);
 TinyGPSPlus gps;
-constexpr uint32_t GPS_BAUD_OPTIONS[] = {115200, 9600, 38400};
+constexpr uint32_t GPS_BAUD_OPTIONS[] = {9600, 115200, 38400};
 constexpr int GPS_BAUD_COUNT = sizeof(GPS_BAUD_OPTIONS) / sizeof(GPS_BAUD_OPTIONS[0]);
 
 GpsView g_view = GpsView::MENU;

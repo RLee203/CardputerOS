@@ -25,6 +25,7 @@ static bool     mp3Playing = false;
 static bool     mp3Paused  = false;
 static bool     sdOk       = false;
 static uint8_t  mp3Vol     = 12;    // 0-21
+static int      mp3PausedAtSel = -1; // track index active when paused (T-Embed)
 static unsigned long mp3StartMs = 0;
 static String   mp3StatusMsg;
 
@@ -277,7 +278,14 @@ void appMp3Loop() {
     if (mp3Playing || mp3Paused) {
         // Controls while playing or paused
         if (ev.enter) {
-            // Pause / Resume
+#ifdef BOARD_TEMBED
+            if (mp3Paused && mp3Sel != mp3PausedAtSel) {
+                startPlayback();   // different track selected while paused
+                return;
+            }
+            if (mp3Playing) mp3PausedAtSel = mp3Sel;  // record track on pause
+#endif
+            // Pause / Resume same track
             if (audio) {
                 audio->pauseResume();
             }
@@ -287,8 +295,20 @@ void appMp3Loop() {
             drawList();
             return;
         }
+#ifdef BOARD_TEMBED
+        if (mp3Playing) {
+            // Playing: CW(down)=louder, CCW(up)=quieter
+            if (ev.down) { if (mp3Vol < 21) { mp3Vol++; if (audio) audio->setVolume(mp3Vol); } drawMp3Status(); return; }
+            if (ev.up)   { if (mp3Vol > 0)  { mp3Vol--; if (audio) audio->setVolume(mp3Vol); } drawMp3Status(); return; }
+        } else {
+            // Paused: encoder scrolls track list instead
+            if (ev.up   && mp3Sel > 0)            { mp3Sel--; drawList(); return; }
+            if (ev.down && mp3Sel < mp3Count - 1) { mp3Sel++; drawList(); return; }
+        }
+#else
         if (ev.up)    { playPrev(); return; }
         if (ev.down)  { playNext(); return; }
+#endif
     } else {
         // Browse mode
         if (ev.up   && mp3Sel > 0)            { mp3Sel--; drawList(); }

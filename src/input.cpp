@@ -1,3 +1,5 @@
+// Cardputer keyboard input — T-Embed encoder input is in input_tembed.cpp.
+#ifndef BOARD_TEMBED
 #include "input.h"
 #include "config.h"
 #include <M5Cardputer.h>
@@ -75,3 +77,5 @@ KeyEvent readKeys() {
     }
     return ev;
 }
+
+#endif // !BOARD_TEMBED

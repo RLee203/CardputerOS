@@ -137,16 +137,29 @@ static String lockPinFirst;   // stores first entry during confirmation
 static String lockPinMsg;
 static int    lockPinPhase = 0;  // 0=enter new  1=confirm
 
+#ifdef BOARD_TEMBED
+static const char* MENU_FOOTER[] = {
+    "Enter: cycle brightness",
+    "Enter: next theme",
+    "Enter to open",
+    "Enter: cycle sleep timeout",
+    "T-Embed OS v2.4",
+    "Enter to toggle on/off",
+    "Enter to set a new PIN",
+    "Enter to switch and restart",
+};
+#else
 static const char* MENU_FOOTER[] = {
     "fn+, dim   fn+/ bright",
     "fn+, prev  fn+/ next theme",
     "Enter to open",
     "fn+, prev  fn+/ next timeout",
-    "Cardputer OS v2.2",
+    "Device info",
     "Enter to toggle on/off",
     "Enter to set a new PIN",
     "Enter to switch and restart",
 };
+#endif
 
 // ── Draw ──────────────────────────────────────────────────────────────────
 
@@ -203,7 +216,11 @@ static void drawMenu() {
                 d.print(buf);
                 break;
             case 4:
-                d.print("About: Cardputer OS v2.2");
+#ifdef BOARD_TEMBED
+                d.print("About: T-Embed OS v2.4");
+#else
+                d.print("About: Cardputer OS v2.4");
+#endif
                 if (sel) {
                     d.setTextColor(C_DIM, bg);
                     d.setCursor(SCREEN_W / 2, y + 2);
@@ -298,6 +315,19 @@ static void handleMenu() {
     }
 
     if (ev.enter) {
+#ifdef BOARD_TEMBED
+        // No left/right keys on T-Embed — Enter cycles the value for these items
+        if (settSel == 0) {
+            static const int BRIGHT_STEPS[] = {50, 100, 150, 200, 255};
+            static constexpr int N_STEPS = 5;
+            int bi = N_STEPS - 1;
+            for (int i = 0; i < N_STEPS; i++) { if (brightness <= BRIGHT_STEPS[i]) { bi = i; break; } }
+            brightness = BRIGHT_STEPS[(bi + 1) % N_STEPS];
+            M5Cardputer.Display.setBrightness(brightness); saveSettings(); settDirty = true; return;
+        }
+        if (settSel == 1) { themeIdx = (themeIdx + 1) % NUM_THEMES; applyTheme(themeIdx); saveSettings(); settDirty = true; return; }
+        if (settSel == 3) { sleepIdx = (sleepIdx + 1) % NUM_SLEEP; sleepTimeoutMs = SLEEP_OPTIONS[sleepIdx]; resetSleepTimer(); saveSettings(); settDirty = true; return; }
+#endif
         if (settSel == 2) {
             helpScroll = 0;
             settState  = SettingsState::HELP;
@@ -462,3 +492,4 @@ void settingsSetBootMode(DeviceMode mode) {
     bootMode = mode;
     saveSettings();
 }
+

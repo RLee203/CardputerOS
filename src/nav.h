@@ -1,10 +1,23 @@
 #pragma once
 #include <M5Cardputer.h>
-#include <M5Unified.h>
-#include <utility/power/IP5306_Class.hpp>
 #include "config.h"
+#ifdef BOARD_TEMBED
+#  include <Wire.h>
+#endif
 
-enum class AppScene { SSH, MP3, NOTES, SETTINGS, GAMES, FILES, IR_REMOTE, PHOTOS, VOICE_MEMOS, HID_KEYBOARD, USB_STORAGE, TIMER, GPS, LORA, NFC, PAYLOADS, BLE, DETECTOR, WIFI_TOOLS, CC1101, NRF24, ESPNOW, SD_HEALTH, CALC, FIRMWARE };
+#ifndef BOARD_TEMBED
+#  include <M5Unified.h>
+#  include <utility/power/IP5306_Class.hpp>
+   inline m5::IP5306_Class g_cardputerBatteryPmic{};
+   inline bool             g_cardputerBatteryPmicReady = false;
+#endif
+
+enum class AppScene {
+    SSH, MP3, NOTES, SETTINGS, GAMES, FILES, IR_REMOTE, PHOTOS,
+    VOICE_MEMOS, HID_KEYBOARD, USB_STORAGE, TIMER, GPS, LORA, NFC,
+    PAYLOADS, BLE, DETECTOR, WIFI_TOOLS, CC1101, NRF24, ESPNOW,
+    SD_HEALTH, CALC, FIRMWARE
+};
 enum class DeviceMode : uint8_t { SD = 0, RADIO = 1 };
 
 void goHome();
@@ -16,30 +29,39 @@ void setCurrentDeviceMode(DeviceMode mode);
 void requestModeSwitch(DeviceMode targetMode, const char* feature);
 bool isSdMode();
 bool isRadioMode();
-
-inline m5::IP5306_Class g_cardputerBatteryPmic{};
-inline bool g_cardputerBatteryPmicReady = false;
+bool requiresSdMode(AppScene scene);
+bool requiresRadioMode(AppScene scene);
 
 inline void initBatteryMonitoring() {
+#ifndef BOARD_TEMBED
     g_cardputerBatteryPmicReady = g_cardputerBatteryPmic.begin();
+#endif
 }
 
 inline int getBatteryPercent() {
+#ifdef BOARD_TEMBED
+    // BQ27220 fuel gauge at I2C 0x55, command 0x1C = StateOfCharge (uint16 LE, in %)
+    Wire.beginTransmission(0x55);
+    Wire.write(0x1C);
+    if (Wire.endTransmission(false) != 0) return -1;
+    if (Wire.requestFrom((uint8_t)0x55, (uint8_t)2) != 2) return -1;
+    uint16_t soc = (uint16_t)Wire.read() | ((uint16_t)Wire.read() << 8);
+    return (int)constrain((int)soc, 0, 100);
+#else
     if (g_cardputerBatteryPmicReady) {
         int pct = g_cardputerBatteryPmic.getBatteryLevel();
         if (pct >= 0) return pct;
     }
     return M5Cardputer.Power.getBatteryLevel();
+#endif
 }
 
 // ── Battery widget ──────────────────────────────────────────────────────────
 // Draws a small battery icon + % centred in the status bar.
-// Call after setting Font0 size 1. bg = status bar background colour.
-// bx = left edge of battery icon. Default 97 centres icon+text on 240px screen.
-// Pass SCREEN_W-43 (=197) to right-align within the status bar.
-inline void drawBatteryWidget(uint32_t bg, int bx = 97) {
+// Default bx centres the widget on whatever SCREEN_W this build uses.
+inline void drawBatteryWidget(uint32_t bg, int bx = (SCREEN_W - 43) / 2) {
     auto& d   = M5Cardputer.Display;
-    int   pct = getBatteryPercent();   // 0-100, or -1 if unknown
+    int   pct = getBatteryPercent();
     uint32_t col = pct > 50 ? (uint32_t)0x00CC00
                  : pct > 20 ? (uint32_t)0xCCAA00
                             : (uint32_t)0xFF3333;

@@ -1,6 +1,6 @@
 # CardputerOS
 
-CardputerOS is a split-mode firmware for the **M5Stack Cardputer** built with PlatformIO and Arduino.
+CardputerOS is a split-mode ESP32-S3 firmware project with active builds for the **M5Stack Cardputer** and the **LILYGO T-Embed CC1101**, built with PlatformIO and Arduino.
 
 ## CardputerOS 2.4
 
@@ -79,13 +79,30 @@ CardputerOS is a split-mode firmware for the **M5Stack Cardputer** built with Pl
 
 ### Prebuilt
 
-Download `cardputer-os-v2.4-merged.bin` from the [Releases](../../releases) page and flash:
+Prebuilt artifacts live in [`releases/v2.4`](./releases/v2.4):
+
+- `cardputer/cardputer-os-v2.4-merged.bin`
+- `tembed/tembed-os-v2.4-debug-merged.bin`
+- `tembed/bootloader.bin`, `tembed/partitions.bin`, `tembed/firmware.bin`
+
+Flash a merged image at `0x0`:
 
 ```bash
-esptool.py --chip esp32s3 --port YOUR_PORT write_flash 0x0 cardputer-os-v2.4-merged.bin
+esptool.py --chip esp32s3 --port YOUR_PORT write_flash 0x0 releases/v2.4/cardputer/cardputer-os-v2.4-merged.bin
 ```
 
-> **Note:** v2.4 uses a new dual-OTA partition layout. Flashing the merged binary for the first time will reset saved settings (brightness, theme, lock PIN, boot mode) to defaults. This is a one-time migration — settings persist normally after that.
+```bash
+esptool.py --chip esp32s3 --port YOUR_PORT write_flash 0x0 releases/v2.4/tembed/tembed-os-v2.4-debug-merged.bin
+```
+
+Flash the split T-Embed bins if needed:
+
+```bash
+esptool.py --chip esp32s3 --port YOUR_PORT write_flash 0x0000 releases/v2.4/tembed/bootloader.bin 0x8000 releases/v2.4/tembed/partitions.bin 0x10000 releases/v2.4/tembed/firmware.bin
+```
+
+> **Note:** v2.4 uses a new dual-OTA partition layout. Flashing a merged binary for the first time will reset saved settings (brightness, theme, lock PIN, boot mode) to defaults. This is a one-time migration — settings persist normally after that.
+> **Note:** the packaged T-Embed build currently keeps RF debug logging enabled because it is the validated CC1101 tuning backup.
 
 ### Build From Source
 
@@ -97,7 +114,7 @@ pio run --target upload
 
 ## Hardware Notes
 
-- **Device:** M5Stack Cardputer
+- **Devices:** M5Stack Cardputer and LILYGO T-Embed CC1101
 - **microSD:** required for MP3, Photos, Games, Voice Memos, GPS logs, wardriving logs, payloads, and NFC dumps
 - **External IR receiver:** optional, only needed for learning new IR codes
 - **LoRa/GNSS Cap:** required for GPS and LoRa apps
@@ -152,3 +169,4 @@ pio run --target upload
 ## License
 
 MIT
+

@@ -7,8 +7,8 @@
 
 // ── Constants ──────────────────────────────────────────────────────────────
 static constexpr int N_CH    = 126;   // 2400..2525 MHz
-static constexpr int BAR_W   = 2;     // px per channel (126*2 = 252 > 240, so show ch 0-119)
-static constexpr int N_SHOW  = SCREEN_W / BAR_W; // 120 channels visible
+static constexpr int BAR_W   = 2;     // px per channel
+static constexpr int N_SHOW  = (SCREEN_W / BAR_W) < N_CH ? (SCREEN_W / BAR_W) : N_CH;
 static constexpr int SWEEP_SAMPLES = 20; // sweeps before clear
 static constexpr int SPEC_PAD_X = 6;
 static constexpr int BAR_Y0  = STATUS_H + 6;
@@ -55,22 +55,30 @@ static void drawInitError() {
     d.setTextColor(C_ERROR, C_BG);
     d.setCursor(8, 44); d.print("nRF24 not found!");
     d.setTextColor(C_DIM, C_BG);
-    d.setCursor(8, 58); d.print("Check PINGEQUA module.");
+    d.setCursor(8, 58); d.print("Check nRF24 module.");
     d.setCursor(8, 80); d.print("Press any key...");
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────
 static bool initChip() {
     if (s_inited) return true;
+#ifndef BOARD_TEMBED
+    // On Cardputer SPI.begin() sets up the bus. On T-Embed LovyanGFX already owns
+    // SPI2_HOST and the GPIO matrix; passing NRF24_CSN_PIN here would configure
+    // GPIO44 as hardware SPI SS and drive it LOW during every transaction →
+    // NRF24 contends on MISO while CC1101 is active → CC1101 freezes.
     SPI.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, NRF24_CSN_PIN);
+#endif
     pinMode(NRF24_CSN_PIN, OUTPUT);
     digitalWrite(NRF24_CSN_PIN, HIGH);
     pinMode(NRF24_CE_PIN, OUTPUT);
     digitalWrite(NRF24_CE_PIN, LOW);
+#if LORA_NSS_PIN >= 0
     pinMode(LORA_NSS_PIN, OUTPUT);
     digitalWrite(LORA_NSS_PIN, HIGH);
     pinMode(LORA_RST_PIN, OUTPUT);
     digitalWrite(LORA_RST_PIN, LOW);
+#endif
     delay(10);
     if (!radio.begin()) return false;
     delay(5);
@@ -325,6 +333,7 @@ static void drawMenu() {
 
 // ── Public entry points ────────────────────────────────────────────────────
 void appNrf24Enter() {
+    readKeys();   // flush encoder-click carry-over from launcher
     s_state   = NRF24State::MENU;
     s_menuSel = 0;
     s_dirty   = true;
@@ -418,12 +427,20 @@ void appNrf24Loop() {
         }
         if (!ev.changed) return;
         if (ev.back) { if (s_inited) radio.stopListening(); s_state = NRF24State::MENU; s_dirty = true; return; }
+#ifdef BOARD_TEMBED
+        if (ev.up || ev.down) {
+            if (s_inited) radio.stopListening();
+            s_sniffCh = (s_sniffCh + N_CH + (ev.down ? 1 : -1)) % N_CH;
+            configSniff(); drawSniffHeader();
+        }
+#else
         if (ev.left || ev.right) {
             if (s_inited) radio.stopListening();
             s_sniffCh = (s_sniffCh + N_CH + (ev.right ? 1 : -1)) % N_CH;
             configSniff();
             drawSniffHeader();
         }
+#endif
         break;
 
     case NRF24State::MOUSEJACK: {
@@ -470,3 +487,4 @@ void appNrf24Loop() {
     }
     }
 }
+

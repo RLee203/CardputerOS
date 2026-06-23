@@ -11,7 +11,11 @@
 namespace {
 
 // ── Hardware ────────────────────────────────────────────────────────────────
-Adafruit_PN532 nfc(-1, -1, &Wire1);
+#ifdef BOARD_TEMBED
+Adafruit_PN532 nfc(-1, -1, &Wire);   // T-Embed Plus: I2C on SDA=8/SCL=18; IRQ/RESET polled like Bruce
+#else
+Adafruit_PN532 nfc(-1, -1, &Wire1);  // Cardputer: secondary I2C port
+#endif
 bool     g_nfcReady = false;
 uint32_t g_fwVer    = 0;
 
@@ -201,8 +205,10 @@ bool scanBlocking(int maxTries = 20, uint16_t eachMs = 500) {
 }
 
 bool initSD() {
+#if LORA_NSS_PIN >= 0
     digitalWrite(LORA_NSS_PIN, HIGH);
     digitalWrite(LORA_RST_PIN, LOW);
+#endif
     return SD.begin(SD_CS_PIN, SPI, 25000000);
 }
 
@@ -221,7 +227,7 @@ void drawMenu() {
         d.setTextColor(C_ERROR, C_BG);
         d.setCursor(8, BODY_Y + 4);  d.print("PN532 not found");
         d.setTextColor(C_DIM, C_BG);
-        d.setCursor(8, BODY_Y + 16); d.print("G8=SDA  G9=SCL  3.3V  GND");
+        d.setCursor(8, BODY_Y + 16); d.print("G8=SDA  G18=SCL  3.3V  GND");
         drawFooter("Bksp: home");
         g_dirty = false;
         return;
@@ -1020,17 +1026,31 @@ void appNfcEnter() {
     // G8/G9 are NFC-only and idle between sessions.
     static bool s_wire1Up = false;
     if (!s_wire1Up) {
+#ifdef BOARD_TEMBED
+        // Wire already init'd in setup for battery gauge on same bus; just configure
+        Wire.setClock(100000);
+        Wire.setTimeOut(80);
+#else
         Wire1.begin(NFC_SDA_PIN, NFC_SCL_PIN);
         Wire1.setClock(100000);
         Wire1.setTimeOut(80);
+#endif
         s_wire1Up = true;
     }
-    // Drain any stale response left over from a previous session (e.g. TgInitAsTarget)
+    nfc.begin();
+#ifdef BOARD_TEMBED
+    // Adafruit_I2CDevice::begin() calls Wire.begin() with no args, resetting the
+    // I2C bus to default ESP32 pins.  Restore SDA=8/SCL=18 before any NFC I/O.
+    Wire.begin(NFC_SDA_PIN, NFC_SCL_PIN);
+    Wire.setClock(100000);
+    Wire.setTimeOut(80);
+#else
+    // Drain any stale response left over from a previous session (e.g. TgInitAsTarget).
     if (nfc.isready()) {
         uint8_t drain[20] = {};
         nfc.readdata(drain, sizeof(drain));
     }
-    nfc.begin();
+#endif
     g_fwVer    = nfc.getFirmwareVersion();
     g_nfcReady = (g_fwVer != 0);
     if (g_nfcReady) {

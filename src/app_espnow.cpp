@@ -6,6 +6,9 @@
 #include <WiFi.h>
 #include <esp_now.h>
 #include <string.h>
+#ifdef BOARD_TEMBED
+#include "vkb_tembed.h"
+#endif
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 static constexpr int INPUT_H    = 14;
@@ -40,9 +43,13 @@ static bool s_dirty     = true;
 
 // Thread-safe single-slot receive queue
 // The ESP-NOW recv callback runs in the WiFi task (separate from loop()).
-static volatile bool s_msgPending = false;
+static volatile bool s_msgPending  = false;
 static volatile char s_pendingName[MAX_NAME];
 static volatile char s_pendingText[MAX_MSG];
+static volatile int  s_unreadCount = 0;  // incoming msgs since last app entry
+
+// T-Embed: first Back with messages shows clear-confirm prompt
+static bool s_clearConfirm = false;
 
 // Peer tracking by display name (no MAC management needed)
 static char s_seenNames[8][MAX_NAME];
@@ -86,9 +93,11 @@ static void pushMsg(const char* name, const char* text, bool mine) {
 // ── ESP-NOW receive callback (WiFi task context) ──────────────────────────────
 static void onRecv(const uint8_t* mac, const uint8_t* data, int len) {
     (void)mac;
-    if (len < (int)(sizeof(uint8_t) + MAX_NAME) || s_msgPending) return;
+    if (len < (int)(sizeof(uint8_t) + MAX_NAME)) return;
     const EspNowPkt* pkt = (const EspNowPkt*)data;
     if (pkt->type != 'M') return;
+    s_unreadCount++;          // count all; queue drops duplicates
+    if (s_msgPending) return;
     for (int i = 0; i < MAX_NAME; i++) s_pendingName[i] = pkt->name[i];
     for (int i = 0; i < MAX_MSG;  i++) s_pendingText[i] = pkt->text[i];
     s_msgPending = true;
@@ -150,6 +159,14 @@ static void drawStatusBar() {
     d.setTextColor(s_seenCount > 0 ? (uint32_t)0x00FF88 : (uint32_t)0x444444, SBG);
     d.setCursor(74, 3);
     d.print(buf);
+
+    if (s_unreadCount > 0) {
+        char ub[8];
+        snprintf(ub, sizeof(ub), "[%d]", s_unreadCount > 99 ? 99 : (int)s_unreadCount);
+        d.setTextColor(0x00FF44, SBG);
+        d.setCursor(120, 3);
+        d.print(ub);
+    }
 
     d.setTextColor(0x336688, SBG);
     int nw = (int)strlen(s_myName) * FONT_W;
@@ -218,6 +235,17 @@ static void drawLog() {
 static void drawInputLine() {
     auto& d = M5Cardputer.Display;
     int y = SCREEN_H - INPUT_H;
+    if (s_clearConfirm) {
+        constexpr uint32_t CBG = 0x180800;
+        d.fillRect(0, y, SCREEN_W, INPUT_H, CBG);
+        d.drawFastHLine(0, y, SCREEN_W, 0x442200);
+        d.setFont(&fonts::Font0);
+        d.setTextSize(1);
+        d.setTextColor(0xFF8800, CBG);
+        d.setCursor(2, y + 3);
+        d.print("Ent=clear msgs  Back=exit");
+        return;
+    }
     constexpr uint32_t IBG = 0x080C18;
     d.fillRect(0, y, SCREEN_W, INPUT_H, IBG);
     d.drawFastHLine(0, y, SCREEN_W, 0x002244);
@@ -256,10 +284,13 @@ static void drawError() {
 
 // ── Public ────────────────────────────────────────────────────────────────────
 void appEspnowEnter() {
-    s_dirty      = true;
-    s_initError  = false;
-    s_scroll     = 0;
-    s_msgPending = false;
+    s_dirty        = true;
+    s_initError    = false;
+    s_scroll       = 0;
+    // Do NOT clear s_msgPending here — the loop processes it on the first tick
+    // so background messages are visible immediately when entering the app
+    s_unreadCount  = 0;
+    s_clearConfirm = false;
 
     if (!s_inited) {
         if (!initEspNow()) {
@@ -291,22 +322,51 @@ void appEspnowLoop() {
 
     if (ev.changed) {
         if (ev.back) {
-            if (s_inited) { esp_now_deinit(); s_inited = false; s_seenCount = 0; }
+#ifdef BOARD_TEMBED
+            if (s_clearConfirm) { s_clearConfirm = false; goHome(); return; }
+            if (s_logCount > 0) { s_clearConfirm = true; s_dirty = true; return; }
+#endif
             goHome();
             return;
         }
         if (ev.enter) {
+#ifdef BOARD_TEMBED
+            if (s_clearConfirm) {
+                s_clearConfirm = false;
+                s_logHead = 0; s_logCount = 0; s_scroll = 0; s_unreadCount = 0;
+                s_dirty = true;
+            } else
+#endif
             if (s_inputLen > 0) {
                 sendMsg(s_input);
                 s_input[0] = 0;
                 s_inputLen = 0;
                 s_dirty = true;
+#ifdef BOARD_TEMBED
+            } else {
+                bool cancelled = false;
+                String msg = vkbInput("ESP-NOW Message:", "", MAX_MSG - 1, &cancelled);
+                if (!cancelled && msg.length() > 0) sendMsg(msg.c_str());
+                s_dirty = true;
+#endif
             }
         } else if (ev.up) {
             int maxScroll = s_logCount > VISIBLE ? s_logCount - VISIBLE : 0;
             if (s_scroll < maxScroll) { s_scroll++; s_dirty = true; }
+            else if (maxScroll > 0)   { s_scroll = 0; s_dirty = true; }
         } else if (ev.down) {
             if (s_scroll > 0) { s_scroll--; s_dirty = true; }
+            else { int ms = s_logCount > VISIBLE ? s_logCount - VISIBLE : 0;
+                   if (ms > 0) { s_scroll = ms; s_dirty = true; } }
+        } else if (ev.fnKey) {
+#ifndef BOARD_TEMBED
+            for (char ch : ev.chars) {
+                if (ch == 'c' || ch == 'C') {
+                    s_logHead = 0; s_logCount = 0; s_scroll = 0; s_unreadCount = 0;
+                    s_dirty = true;
+                }
+            }
+#endif
         } else {
             for (char c : ev.chars) {
                 if (c == 8 || c == 127) {
@@ -321,4 +381,21 @@ void appEspnowLoop() {
     }
 
     if (s_dirty) { drawAll(); s_dirty = false; }
+}
+
+int espnowUnreadCount() { return (int)s_unreadCount; }
+
+void espnowInitBackground() {
+    if (s_inited) return;
+    initEspNow();  // silently; errors leave s_inited=false, badge stays 0
+}
+
+void espnowProcessBackground() {
+    if (!s_msgPending) return;
+    char name[MAX_NAME], text[MAX_MSG];
+    for (int i = 0; i < MAX_NAME; i++) name[i] = (char)s_pendingName[i];
+    for (int i = 0; i < MAX_MSG;  i++) text[i] = (char)s_pendingText[i];
+    s_msgPending = false;
+    registerSender(name);
+    pushMsg(name, text, false);
 }

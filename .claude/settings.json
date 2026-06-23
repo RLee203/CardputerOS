@@ -2,7 +2,35 @@
   "permissions": {
     "allow": [
       "Bash(git tag *)",
-      "Bash(gh release create v2.4 cardputer-os-v2.4-merged.bin --title 'CardputerOS v2.4' --notes ' *)"
+      "Bash(gh release create v2.4 cardputer-os-v2.4-merged.bin --title 'CardputerOS v2.4' --notes ' *)",
+      "Bash(pio run *)",
+      "Bash(pio device *)",
+      "Bash(python -m serial.tools.list_ports -v)",
+      "Bash(python -c ' *)",
+      "Bash(curl -s \"https://raw.githubusercontent.com/yannpom/esp32sniffer/master/esp32sniffer.ino\")",
+      "Bash(curl -s \"https://api.github.com/repos/yannpom/esp32sniffer/contents\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/yannpom/esp32sniffer/master/main/sniffer.c\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/yannpom/esp32sniffer/master/Capture.py\")",
+      "Bash(Get-ChildItem -Path src -Filter \"app_*.cpp\" -File)",
+      "Bash(Select-Object -ExpandProperty Name)",
+      "Bash(Sort-Object)",
+      "Bash(Get-ChildItem \"C:\\\\Users\\\\robes\\\\cardputer-ssh\\\\CardputerOS\\\\.pio\\\\libdeps\\\\tembed\" -Directory)",
+      "Bash(Select-Object Name)",
+      "Bash(dir \"C:\\\\Users\\\\robes\\\\cardputer-ssh\\\\CardputerOS\\\\.pio\\\\libdeps\\\\tembed\")",
+      "Bash(gh api *)",
+      "Bash(python3 -c \"import sys,json,base64; d=json.load\\(sys.stdin\\); print\\(base64.b64decode\\(d['content']\\).decode\\(\\)\\)\")",
+      "Bash(gh search *)",
+      "WebFetch(domain:github.com)",
+      "Bash(mode)",
+      "Bash(findstr COM)",
+      "Bash(findstr \"COM\")",
+      "Bash(Select-String -Pattern \"error:|Error|FAILED\")",
+      "Bash(Select-Object -First 30)",
+      "Bash(taskkill /F /IM python.exe)",
+      "Bash(taskkill /F /IM pio.exe)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\robes\\.claude\\projects\\c--Users-robes-cardputer-ssh-CardputerOS\\memory"
     ]
   }
 }

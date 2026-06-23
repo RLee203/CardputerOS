@@ -3,6 +3,7 @@
 #include "input.h"
 #include "config.h"
 #include "app_mp3.h"
+#include "app_espnow.h"
 #include <M5Cardputer.h>
 #include <WiFi.h>
 
@@ -25,6 +26,17 @@ struct AppEntry {
     AppScene scene;
     uint32_t color;
 };
+
+// ── T-Embed app lists (encoder-only navigation, no keyboard-dependent apps) ──
+#ifdef BOARD_TEMBED
+// Media: MP3, Files, IR, Photos, Timer, SDHealth, Firmware, Settings
+static const int SD_APP_IDS_TEMBED[]    = { 1, 5, 6, 7, 11, 22, 24, 4 };
+// Radio: CC1101, BLE, Detector, WiFi, ESPNOW, NFC, nRF24, GPS, Settings
+static const int RADIO_APP_IDS_TEMBED[] = { 19, 16, 17, 18, 21, 14, 20, 12, 4 };
+static constexpr int SD_APP_COUNT_TEMBED    = (int)(sizeof(SD_APP_IDS_TEMBED)    / sizeof(int));
+static constexpr int RADIO_APP_COUNT_TEMBED = (int)(sizeof(RADIO_APP_IDS_TEMBED) / sizeof(int));
+static int g_tembed_sel = 0;
+#endif
 
 static const AppEntry APPS[] = {
     { "SSH", 's', AppScene::SSH, 0x1155BB },
@@ -63,13 +75,22 @@ static constexpr int RADIO_APP_COUNT = (int)(sizeof(RADIO_APP_IDS) / sizeof(RADI
 static int selRow = 0, selCol = 0, selPage = 0;
 
 static void drawAll();
+static void drawStatusBar();
 
 static const int* activeAppIds() {
+#ifdef BOARD_TEMBED
+    return isSdMode() ? SD_APP_IDS_TEMBED : RADIO_APP_IDS_TEMBED;
+#else
     return isSdMode() ? SD_APP_IDS : RADIO_APP_IDS;
+#endif
 }
 
 static int activeAppCount() {
+#ifdef BOARD_TEMBED
+    return isSdMode() ? SD_APP_COUNT_TEMBED : RADIO_APP_COUNT_TEMBED;
+#else
     return isSdMode() ? SD_APP_COUNT : RADIO_APP_COUNT;
+#endif
 }
 
 static const AppEntry* appForVisibleIndex(int idx) {
@@ -394,6 +415,199 @@ static void iSdHealth(int cx, int cy) {
     d.drawLine(cx + 6, cy + 2, cx + 9, cy - 1, 0x7DFFB2);
 }
 
+// ── T-Embed tile layout (3×3 grid, 9 per page, fits 320×170 landscape) ───────
+#ifdef BOARD_TEMBED
+// Grid: col x = {2, 108, 214}, row y = {14, 66, 118}, cell = 104×50
+static constexpr int TILE_COLS  = 3;
+static constexpr int TILE_ROWS  = 3;
+static constexpr int TILE_PP    = TILE_COLS * TILE_ROWS;
+static constexpr int TILE_CX[3] = {   2, 108, 214 };
+static constexpr int TILE_CY[3] = {  14,  66, 118 };
+static constexpr int TILE_CW    = 104;
+static constexpr int TILE_CH    = 50;
+
+static int tilePageCount() { return (activeAppCount() + TILE_PP - 1) / TILE_PP; }
+static int tilePage()      { return g_tembed_sel / TILE_PP; }
+
+static void drawTile(int row, int col) {
+    int page = tilePage();
+    int idx  = page * TILE_PP + row * TILE_COLS + col;
+    int cx0  = TILE_CX[col], cy0 = TILE_CY[row];
+    auto& d  = M5Cardputer.Display;
+
+    const auto* app = appForVisibleIndex(idx);
+    if (!app) {
+        d.fillRect(cx0, cy0, TILE_CW, TILE_CH, LBKG);
+        return;
+    }
+
+    uint32_t tc  = app->color;
+    bool     sel = (idx == g_tembed_sel);
+
+    d.fillRoundRect(cx0, cy0, TILE_CW, TILE_CH, 5, tc);
+    if (sel) {
+        d.drawRoundRect(cx0+2, cy0+2, TILE_CW-4, TILE_CH-4, 4, 0xFFFFFF);
+        d.drawRoundRect(cx0+3, cy0+3, TILE_CW-6, TILE_CH-6, 3, 0xFFFFFF);
+    }
+
+    int icx = cx0 + TILE_CW / 2;
+    int icy  = cy0 + (TILE_CH - 14) / 2 - 2;
+    d.setFont(&fonts::Font0);
+    d.setTextSize(1);
+    d.setTextColor(0xFFFFFF, tc);
+    int appId = activeAppIds()[idx];
+    switch (appId) {
+        case 0: iSSH(icx, icy);          break;
+        case 1: iMP3(icx, icy);          break;
+        case 2: iNotes(icx, icy, tc);    break;
+        case 3: iGames(icx, icy);        break;
+        case 4: iSettings(icx, icy, tc); break;
+        case 5: iFiles(icx, icy);        break;
+        case 6: iRemote(icx, icy);       break;
+        case 7: iPhotos(icx, icy);       break;
+        case 8: iRecorder(icx, icy);     break;
+        case 9: iKeyboard(icx, icy);     break;
+        case 10: iUsb(icx, icy);         break;
+        case 11: iTimer(icx, icy);       break;
+        case 12: iGPS(icx, icy);         break;
+        case 13: iLora(icx, icy);        break;
+        case 14: iNfc(icx, icy);         break;
+        case 15: iPayloads(icx, icy);    break;
+        case 16: iBle(icx, icy);         break;
+        case 17: iDetector(icx, icy);    break;
+        case 18: iWifi(icx, icy);        break;
+        case 19: iCC1101(icx, icy);      break;
+        case 20: iNRF24(icx, icy);       break;
+        case 21: iEspNow(icx, icy);
+            if (espnowUnreadCount() > 0) {
+                d.fillCircle(cx0 + TILE_CW - 6, cy0 + 5, 4, 0x00CC44);
+                char nb[3];
+                snprintf(nb, sizeof(nb), "%d", espnowUnreadCount() > 9 ? 9 : espnowUnreadCount());
+                d.setTextColor(0xFFFFFF, 0x00CC44);
+                d.setCursor(cx0 + TILE_CW - 9, cy0 + 3);
+                d.print(nb);
+            }
+            break;
+        case 22: iSdHealth(icx, icy);    break;
+        case 23: iCalc(icx, icy);        break;
+        case 24: iFirmware(icx, icy);    break;
+    }
+
+    // Label
+    d.setFont(&fonts::Font0);
+    d.setTextSize(1);
+    d.setTextColor(0xFFFFFF, tc);
+    int lw = (int)strlen(app->label) * FONT_W;
+    d.setCursor(cx0 + (TILE_CW - lw) / 2, cy0 + TILE_CH - 11);
+    d.print(app->label);
+
+    // Mode warning badge on selected tile (wrong mode)
+    if (sel) {
+        bool wrong = (requiresSdMode(app->scene)    && !isSdMode()) ||
+                     (requiresRadioMode(app->scene) && !isRadioMode());
+        if (wrong) {
+            d.setTextColor(0xFFAA00, tc);
+            d.setCursor(cx0 + 2, cy0 + 2);
+            d.print("!");
+        }
+    }
+}
+
+static void drawStatusBarTembed() {
+    auto& d = M5Cardputer.Display;
+    constexpr uint32_t SBG = 0x1A1A1A;
+    d.fillRect(0, 0, SCREEN_W, STATUS_H, SBG);
+    d.setFont(&fonts::Font0);
+    d.setTextSize(1);
+    d.setTextColor(0xDDDDDD, SBG);
+    d.setCursor(2, 3);
+    d.print(isSdMode() ? "Multimedia" : "Radio");
+    if (!isSdMode() && espnowUnreadCount() > 0) {
+        char ub[8];
+        snprintf(ub, sizeof(ub), "[%d]", espnowUnreadCount() > 99 ? 99 : espnowUnreadCount());
+        d.setTextColor(0x00FF44, SBG);
+        d.setCursor(68, 3);
+        d.print(ub);
+    }
+    int pages = tilePageCount();
+    if (pages > 1) {
+        char pb[8];
+        snprintf(pb, sizeof(pb), "%d/%d", tilePage()+1, pages);
+        d.setCursor((SCREEN_W - (int)strlen(pb)*FONT_W)/2, 3);
+        d.print(pb);
+    }
+    if (bgAudioIsActive()) {
+        d.setTextColor(0xFFAA00, SBG);
+        d.setCursor(SCREEN_W - 46, 3);
+        d.print("(*)");
+    }
+    drawBatteryWidget(SBG);
+}
+
+static void drawTileAll() {
+    M5Cardputer.Display.fillScreen(LBKG);
+    drawStatusBarTembed();
+    for (int r = 0; r < TILE_ROWS; r++)
+        for (int c = 0; c < TILE_COLS; c++)
+            drawTile(r, c);
+}
+
+static void redrawEspnowBadge() {
+    // Redraw the ESP-NOW tile (and status bar) if it's on the current page
+    int page = tilePage();
+    int appCount = activeAppCount();
+    for (int i = 0; i < appCount; i++) {
+        if (activeAppIds()[i] == 21) {  // 21 = ESP-NOW
+            if (i / TILE_PP == page) {
+                int local = i % TILE_PP;
+                drawTile(local / TILE_COLS, local % TILE_COLS);
+            }
+            break;
+        }
+    }
+    drawStatusBarTembed();
+}
+
+static void launcherLoopTembed() {
+    // Live badge update — runs every loop tick regardless of input
+    static int s_lastUnread = 0;
+    int unread = !isSdMode() ? espnowUnreadCount() : 0;
+    if (unread != s_lastUnread) {
+        s_lastUnread = unread;
+        redrawEspnowBadge();
+    }
+
+    auto ev = readKeys();
+    if (!ev.changed) return;
+    int count    = activeAppCount();
+    int prev_sel = g_tembed_sel;
+
+    if (ev.up   && g_tembed_sel > 0)          g_tembed_sel--;
+    if (ev.down && g_tembed_sel < count - 1)  g_tembed_sel++;
+
+    if (ev.back) {
+        DeviceMode target = isSdMode() ? DeviceMode::RADIO : DeviceMode::SD;
+        requestModeSwitch(target, "Mode switch");
+        return;
+    }
+    if (ev.enter) {
+        const auto* app = appForVisibleIndex(g_tembed_sel);
+        if (app) { launchApp(app->scene); return; }
+    }
+
+    int prevPage = prev_sel / TILE_PP;
+    int curPage  = g_tembed_sel / TILE_PP;
+    if (curPage != prevPage) {
+        drawTileAll();
+    } else if (g_tembed_sel != prev_sel) {
+        int pi = prev_sel    - prevPage * TILE_PP;
+        int ci = g_tembed_sel - curPage  * TILE_PP;
+        drawTile(pi / TILE_COLS, pi % TILE_COLS);
+        drawTile(ci / TILE_COLS, ci % TILE_COLS);
+    }
+}
+#endif  // BOARD_TEMBED
+
 // ── Cell ───────────────────────────────────────────────────────────────────
 
 static void drawCell(int row, int col) {
@@ -445,7 +659,16 @@ static void drawCell(int row, int col) {
         case 18: iWifi(icx, icy);        break;
         case 19: iCC1101(icx, icy);      break;
         case 20: iNRF24(icx, icy);       break;
-        case 21: iEspNow(icx, icy);      break;
+        case 21: iEspNow(icx, icy);
+            if (espnowUnreadCount() > 0) {
+                d.fillCircle(cx0 + cw - 6, cy0 + 5, 4, 0x00CC44);
+                char nb[3];
+                snprintf(nb, sizeof(nb), "%d", espnowUnreadCount() > 9 ? 9 : espnowUnreadCount());
+                d.setTextColor(0xFFFFFF, 0x00CC44);
+                d.setCursor(cx0 + cw - 9, cy0 + 3);
+                d.print(nb);
+            }
+            break;
         case 22: iSdHealth(icx, icy);    break;
         case 23: iCalc(icx, icy);        break;
         case 24: iFirmware(icx, icy);    break;
@@ -471,6 +694,13 @@ static void drawStatusBar() {
     d.setTextColor(0xDDDDDD, SBG);
     d.setCursor(2, 3);
     d.print(isSdMode() ? "Multimedia" : "Radio");
+    if (!isSdMode() && espnowUnreadCount() > 0) {
+        char ub[8];
+        snprintf(ub, sizeof(ub), "[%d]", espnowUnreadCount() > 99 ? 99 : espnowUnreadCount());
+        d.setTextColor(0x00FF44, SBG);
+        d.setCursor(44, 3);
+        d.print(ub);
+    }
 
     String  info;
     if (isSdMode()) info = "";
@@ -509,18 +739,52 @@ static void drawAll() {
 }
 
 void launcherEnter() {
-    // Reset selection only when mode changes (SD↔Radio switch)
     static bool prevSdMode = false;
     bool curSdMode = isSdMode();
     if (curSdMode != prevSdMode) {
+#ifdef BOARD_TEMBED
+        g_tembed_sel = 0;
+#else
         selRow = 0; selCol = 0; selPage = 0;
+#endif
         prevSdMode = curSdMode;
     }
+    // Start receiving ESP-NOW in background so messages are counted before entering the app
+    if (!curSdMode) espnowInitBackground();
+#ifdef BOARD_TEMBED
+    if (g_tembed_sel >= activeAppCount()) g_tembed_sel = 0;
+    drawTileAll();
+#else
     clampSelectionForPage();
     drawAll();
+#endif
 }
 
 void launcherLoop() {
+#ifdef BOARD_TEMBED
+    launcherLoopTembed();
+    return;
+#endif
+    // Live badge update — runs every loop tick regardless of input
+    {
+        static int s_lastUnread = 0;
+        int unread = !isSdMode() ? espnowUnreadCount() : 0;
+        if (unread != s_lastUnread) {
+            s_lastUnread = unread;
+            drawStatusBar();
+            // Redraw ESP-NOW cell if it's on the current page
+            int count = activeAppCount();
+            for (int i = 0; i < count; i++) {
+                if (activeAppIds()[i] == 21) {
+                    if (i / APPS_PER_PAGE == selPage) {
+                        int local = i % APPS_PER_PAGE;
+                        drawCell(local / NCOLS, local % NCOLS);
+                    }
+                    break;
+                }
+            }
+        }
+    }
     auto ev = readKeys();
     if (!ev.changed) return;
 
@@ -542,15 +806,19 @@ void launcherLoop() {
     }
     if (ev.left) {
         if (selCol > 0) selCol--;
-        else if (switchPage(-1)) {
+        else if (pageCount() > 1) {
+            selPage = (selPage - 1 + pageCount()) % pageCount();
+            clampSelectionForPage();
             moveToPageEnd();
             drawAll();
         }
     }
     if (ev.right) {
         if (selCol < NCOLS - 1 && pageHasCell(selPage, selRow, selCol + 1)) selCol++;
-        else if (switchPage(1)) {
-            moveToPageStart();
+        else if (pageCount() > 1) {
+            selPage = (selPage + 1) % pageCount();
+            selRow = 0; selCol = 0;
+            clampSelectionForPage();
             drawAll();
         }
     }

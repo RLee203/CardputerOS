@@ -51,6 +51,10 @@ static bool s_spectrumConfigured = false;
 // Spectrum
 static uint32_t s_lastSweep = 0;
 static uint32_t s_lastWaveDraw = 0;
+#ifdef BOARD_TEMBED
+static uint16_t s_specEdges[MAX_EDGES];  // persistent last-captured waveform for display
+static int      s_specEdgeCount = 0;
+#endif
 
 // Custom frequency
 static float s_customMHz = 433.92f;
@@ -84,17 +88,42 @@ static RCSwitch s_rcswitch;
 static String s_toastMsg;
 static uint32_t s_toastUntil = 0;
 
+// ── Antenna switch (T-Embed CC1101 Plus: GPIO47=SW1, GPIO48=SW0) ──────────
+#ifdef BOARD_TEMBED
+static void setAntennaSwitch(float mhz) {
+    // Routing per LILYGO official example (BOARD_LORA_SW1=47, BOARD_LORA_SW0=48)
+    if (mhz < 400.0f) {          // 315 MHz
+        digitalWrite(CC1101_SW1_PIN, HIGH);
+        digitalWrite(CC1101_SW0_PIN, LOW);
+    } else if (mhz < 600.0f) {   // 434 MHz
+        digitalWrite(CC1101_SW1_PIN, HIGH);
+        digitalWrite(CC1101_SW0_PIN, HIGH);
+    } else {                      // 868 / 915 MHz
+        digitalWrite(CC1101_SW1_PIN, LOW);
+        digitalWrite(CC1101_SW0_PIN, HIGH);
+    }
+}
+#endif
+
 // ── CC1101 init ────────────────────────────────────────────────────────────
 static bool initChip() {
     if (s_inited) return true;
+#ifdef BOARD_TEMBED
+    pinMode(CC1101_SW0_PIN, OUTPUT);
+    pinMode(CC1101_SW1_PIN, OUTPUT);
+    digitalWrite(CC1101_SW0_PIN, LOW);
+    digitalWrite(CC1101_SW1_PIN, LOW);
+#endif
     ELECHOUSE_cc1101.setSpiPin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, CC1101_CS_PIN);
     ELECHOUSE_cc1101.setGDO0(CC1101_GDO0_PIN);
     ELECHOUSE_cc1101.Init();
     delay(20);
-    for (int attempt = 0; attempt < 4; attempt++) {
-        if (ELECHOUSE_cc1101.getCC1101()) break;
-        delay(15);
+    bool found = false;
+    for (int attempt = 0; attempt < 5; attempt++) {
+        if (ELECHOUSE_cc1101.getCC1101()) { found = true; break; }
+        delay(20);
     }
+    if (!found) return false;
     s_inited = true;
     return true;
 }
@@ -162,6 +191,9 @@ static const char* bandName() { return BANDS[s_bandSel].name; }
 
 static void configOokRx(float mhz) {
     idleChip();
+#ifdef BOARD_TEMBED
+    setAntennaSwitch(mhz);
+#endif
     ELECHOUSE_cc1101.setMHZ(mhz);   // Clb() called internally — do NOT override with setClb()
     ELECHOUSE_cc1101.setModulation(2);    // OOK/ASK
     ELECHOUSE_cc1101.setRxBW(203);        // 203 kHz: wide enough for crystal drift
@@ -186,7 +218,11 @@ static void drawSpectrumFrame() {
     d.setTextColor(0xCFE9CF, 0x0A0F0A);
     d.setCursor(2, 3);
     char hdr[40];
+#ifdef BOARD_TEMBED
+    snprintf(hdr, sizeof(hdr), "CC1101 RSSI  %s", bandName());
+#else
     snprintf(hdr, sizeof(hdr), "CC1101 SCOPE  %s", bandName());
+#endif
     d.print(hdr);
     d.setTextColor(0x6E8B6E, 0x0A0F0A);
     d.setCursor(SCREEN_W - 54, 3);
@@ -246,6 +282,293 @@ static void drawSpectrumWaveform() {
     drawToast();
 }
 
+#ifdef BOARD_TEMBED
+// ── T-Embed spectrum: persistent last-waveform + live RSSI when no signal ──
+static void drawSpectrumBoxTembed() {
+    auto& d = M5Cardputer.Display;
+    int boxX = SPEC_PAD_X + 1, boxY = SPEC_BOX_Y + 1;
+    int boxW = SCREEN_W - SPEC_PAD_X * 2 - 2, boxH = SPEC_BOX_H - 2;
+    d.fillRect(boxX, boxY, boxW, boxH, 0x0A0D0A);
+    d.setFont(&fonts::Font0);
+    d.setTextSize(1);
+
+    // Green "listening" dot (always active in spectrum mode)
+    d.fillCircle(boxX + boxW - 5, boxY + 5, 3, 0x003311);
+    d.fillCircle(boxX + boxW - 5, boxY + 5, 2, 0x00EE44);
+
+    if (s_specEdgeCount < 8) {
+        int rssi = ELECHOUSE_cc1101.getRssi();
+        char buf[32];
+        snprintf(buf, sizeof(buf), "Listening...  %d dBm", rssi);
+        d.setTextColor(C_DIM, 0x0A0D0A);
+        d.setCursor(boxX + 4, boxY + boxH / 2 - 4);
+        d.print(buf);
+        d.setCursor(boxX + 4, boxY + boxH - 11);
+        d.print("up/dn=band  back=exit");
+        return;
+    }
+
+    // Draw persistent waveform from last good capture
+    int lineW = boxW - 4;
+    uint32_t totalUs = 0;
+    for (int i = 0; i < s_specEdgeCount; i++) totalUs += s_specEdges[i];
+    if (totalUs == 0) return;
+
+    int lineX = boxX + 2;
+    int centerY = boxY + boxH / 2;
+    int lineH = min(boxH / 2 - 4, 16);
+    bool level = true;
+    for (int i = 0; i < s_specEdgeCount; i++) {
+        int w = max(1, (int)((uint32_t)s_specEdges[i] * (uint32_t)lineW / totalUs));
+        if (lineX + w > boxX + boxW - 2) break;
+        if (level) {
+            d.drawFastHLine(lineX, centerY - lineH, w, 0xCDE7CD);
+            d.drawFastVLine(lineX, centerY - lineH, lineH, 0xCDE7CD);
+            if (lineX + w + 1 < boxX + boxW - 2)
+                d.drawFastVLine(lineX + w, centerY - lineH, lineH, 0xCDE7CD);
+        } else {
+            d.drawFastHLine(lineX, centerY, w, 0x9FBA9F);
+        }
+        lineX += w;
+        level = !level;
+    }
+    char buf[48];
+    snprintf(buf, sizeof(buf), "%d edges  %ldus", s_specEdgeCount, (long)totalUs);
+    d.setTextColor(C_DIM, 0x0A0D0A);
+    d.setCursor(boxX + 4, boxY + boxH - 11);
+    d.print(buf);
+}
+#endif
+
+#ifdef BOARD_TEMBED
+// ── T-Embed RF capture: bounded ISR, no RCSwitch flood ───────────────────
+static volatile uint16_t s_gdo0Buf[MAX_EDGES];
+static volatile int32_t  s_gdo0BufCnt = 0;
+static volatile uint32_t s_gdo0LastUs  = 0;
+static volatile uint32_t s_gdo0StartUs = 0;
+static volatile uint32_t s_gdo0IdleSinceUs = 0;
+static volatile uint16_t s_gdo0MinUs = 0xFFFF;
+static volatile uint16_t s_gdo0MaxUs = 0;
+static constexpr uint32_t T_EMBED_MIN_EDGE_US = 80;
+static constexpr uint32_t T_EMBED_MAX_EDGE_US = 20000;
+static constexpr uint32_t T_EMBED_BURST_GAP_US = 18000;
+static constexpr int T_EMBED_MIN_WAVE_EDGES = 12;
+static constexpr int T_EMBED_MAX_WAVE_EDGES = 128;
+static constexpr int T_EMBED_MIN_SHARED_EDGES = 12;
+static constexpr int T_EMBED_MAX_SHARED_EDGES = 32;
+static constexpr uint32_t T_EMBED_MIN_SHARED_ACTIVE_US = 7000;
+static constexpr uint32_t T_EMBED_MAX_SHARED_ACTIVE_US = 30000;
+static constexpr uint16_t T_EMBED_MIN_SHARED_MAX_PULSE_US = 1400;
+static constexpr uint16_t T_EMBED_MAX_SHARED_MAX_PULSE_US = 7000;
+static constexpr bool T_EMBED_RX_DEBUG = true;
+
+static bool isAmbientFalseBurst(int edges, uint32_t activeUs, uint16_t maxUs) {
+    return edges >= 18 &&
+           edges <= 21 &&
+           activeUs >= 8500 &&
+           activeUs <= 9500 &&
+           maxUs >= 1800 &&
+           maxUs <= 4500;
+}
+
+static bool isValidTembedBurst(int edges, uint32_t activeUs, uint16_t maxUs) {
+    return edges >= T_EMBED_MIN_SHARED_EDGES &&
+           edges <= T_EMBED_MAX_SHARED_EDGES &&
+           activeUs >= T_EMBED_MIN_SHARED_ACTIVE_US &&
+           activeUs <= T_EMBED_MAX_SHARED_ACTIVE_US &&
+           maxUs >= T_EMBED_MIN_SHARED_MAX_PULSE_US &&
+           maxUs <= T_EMBED_MAX_SHARED_MAX_PULSE_US &&
+           !isAmbientFalseBurst(edges, activeUs, maxUs);
+}
+
+
+static void logTembedRx(const char* tag, int32_t cnt, uint32_t burstUs, uint32_t gapUs,
+                        uint16_t minUs, uint16_t maxUs) {
+    if (!T_EMBED_RX_DEBUG) return;
+    Serial.printf("[tembed-rx] %s cnt=%ld burst=%lu lastGap=%lu min=%u max=%u avg=%lu\n",
+                  tag,
+                  (long)cnt,
+                  (unsigned long)burstUs,
+                  (unsigned long)gapUs,
+                  (unsigned)(minUs == 0xFFFF ? 0 : minUs),
+                  (unsigned)maxUs,
+                  (unsigned long)(cnt > 0 ? (burstUs / (uint32_t)cnt) : 0));
+}
+
+static void resetTembedRawBuffer() {
+    noInterrupts();
+    s_gdo0BufCnt = 0;
+    s_gdo0LastUs = 0;
+    s_gdo0StartUs = 0;
+    s_gdo0IdleSinceUs = 0;
+    s_gdo0MinUs = 0xFFFF;
+    s_gdo0MaxUs = 0;
+    interrupts();
+}
+
+static uint32_t snapshotTembedActiveUs(int32_t cnt) {
+    uint32_t activeUs = 0;
+    if (cnt <= 0) return 0;
+    noInterrupts();
+    int32_t limit = min<int32_t>(cnt, MAX_EDGES);
+    for (int32_t i = 0; i < limit; ++i) activeUs += s_gdo0Buf[i];
+    interrupts();
+    return activeUs;
+}
+
+static void IRAM_ATTR onGdo0Edge() {
+    uint32_t now = micros();
+    uint32_t dur = now - s_gdo0LastUs;
+    if (!s_gdo0StartUs) s_gdo0StartUs = now;
+    if (s_gdo0LastUs && s_gdo0BufCnt < MAX_EDGES && dur >= T_EMBED_MIN_EDGE_US && dur <= T_EMBED_MAX_EDGE_US) {
+        s_gdo0Buf[s_gdo0BufCnt++] = (uint16_t)dur;
+        if (dur < s_gdo0MinUs) s_gdo0MinUs = (uint16_t)dur;
+        if (dur > s_gdo0MaxUs) s_gdo0MaxUs = (uint16_t)dur;
+    }
+    s_gdo0LastUs = now;
+    s_gdo0IdleSinceUs = 0;
+}
+
+static void startCaptureTembed() {
+    idleChip();
+    setAntennaSwitch(capFreq());
+    ELECHOUSE_cc1101.setMHZ(capFreq());
+    ELECHOUSE_cc1101.setModulation(2);
+    ELECHOUSE_cc1101.setRxBW(203);
+    ELECHOUSE_cc1101.setDcFilterOff(1);
+    ELECHOUSE_cc1101.SpiWriteReg(REG_PKTCTRL0, 0x32);
+    ELECHOUSE_cc1101.SpiWriteReg(REG_IOCFG0, 0x0D);
+    ELECHOUSE_cc1101.SpiStrobe(STR_SFRX);
+    ELECHOUSE_cc1101.SetRx();
+    resetTembedRawBuffer();
+    clearCaptureState();
+    attachInterrupt(digitalPinToInterrupt(CC1101_GDO0_PIN), onGdo0Edge, CHANGE);
+    s_hasCap      = false;
+    s_capturing   = true;
+    s_captureStart = millis();
+}
+
+static bool pollCaptureTembed(bool relaxed = false) {
+    noInterrupts();
+    int32_t cnt = s_gdo0BufCnt;
+    uint32_t last = s_gdo0LastUs;
+    uint32_t started = s_gdo0StartUs;
+    uint32_t idleSince = s_gdo0IdleSinceUs;
+    uint16_t minUs = s_gdo0MinUs;
+    uint16_t maxUs = s_gdo0MaxUs;
+    interrupts();
+    if (cnt >= MAX_EDGES - 1) return true;
+    if (!last || !started) return false;
+
+    uint32_t now = micros();
+    if (!idleSince && (uint32_t)(now - last) > T_EMBED_BURST_GAP_US) {
+        noInterrupts();
+        if (!s_gdo0IdleSinceUs && s_gdo0LastUs == last) s_gdo0IdleSinceUs = now;
+        idleSince = s_gdo0IdleSinceUs;
+        interrupts();
+    }
+    if (!idleSince) return false;
+
+    uint32_t activeUs = snapshotTembedActiveUs(cnt);
+    bool valid = isValidTembedBurst((int)cnt, activeUs, maxUs);
+    if (!valid) {
+        logTembedRx(relaxed ? "reject copy" : "reject detect", cnt, activeUs, (now - last), minUs, maxUs);
+        resetTembedRawBuffer();
+        return false;
+    }
+    logTembedRx(relaxed ? "accept copy" : "accept detect", cnt, activeUs, (now - last), minUs, maxUs);
+    return true;
+}
+
+static bool pollSpectrumCaptureTembed() {
+    noInterrupts();
+    int32_t cnt = s_gdo0BufCnt;
+    uint32_t last = s_gdo0LastUs;
+    uint32_t started = s_gdo0StartUs;
+    uint32_t idleSince = s_gdo0IdleSinceUs;
+    uint16_t minUs = s_gdo0MinUs;
+    uint16_t maxUs = s_gdo0MaxUs;
+    interrupts();
+    if (cnt >= MAX_EDGES - 1) return true;
+    if (!last || !started) return false;
+
+    uint32_t now = micros();
+    if (!idleSince && (uint32_t)(now - last) > T_EMBED_BURST_GAP_US) {
+        noInterrupts();
+        if (!s_gdo0IdleSinceUs && s_gdo0LastUs == last) s_gdo0IdleSinceUs = now;
+        idleSince = s_gdo0IdleSinceUs;
+        interrupts();
+    }
+    if (!idleSince) return false;
+
+    uint32_t activeUs = snapshotTembedActiveUs(cnt);
+    if (!isValidTembedBurst((int)cnt, activeUs, maxUs)) {
+        logTembedRx("reject spectrum", cnt, activeUs, (now - last), minUs, maxUs);
+        resetTembedRawBuffer();
+        return false;
+    }
+    if (cnt > T_EMBED_MAX_WAVE_EDGES) logTembedRx("trim spectrum", cnt, activeUs, (now - last), minUs, maxUs);
+    logTembedRx("accept spectrum", cnt, activeUs, (now - last), minUs, maxUs);
+    return true;
+}
+static void stopCaptureTembed(bool keepCapture = true, bool allowRawKeep = false) {
+    detachInterrupt(digitalPinToInterrupt(CC1101_GDO0_PIN));
+    idleChip();
+    s_capturing = false;
+    noInterrupts();
+    int cnt = (int)s_gdo0BufCnt;
+    uint32_t started = s_gdo0StartUs;
+    uint32_t idleSince = s_gdo0IdleSinceUs;
+    uint32_t last = s_gdo0LastUs;
+    uint16_t minUs = s_gdo0MinUs;
+    uint16_t maxUs = s_gdo0MaxUs;
+    interrupts();
+    if (!idleSince && last) {
+        uint32_t now = micros();
+        if ((uint32_t)(now - last) > T_EMBED_BURST_GAP_US) idleSince = now;
+    }
+    s_edgeCount = cnt < MAX_EDGES ? cnt : MAX_EDGES;
+    for (int i = 0; i < s_edgeCount; i++) s_edges[i] = s_gdo0Buf[i];
+    s_lastTransitions = s_edgeCount;
+    uint32_t activeUs = 0;
+    for (int i = 0; i < s_edgeCount; i++) activeUs += s_edges[i];
+    bool fullCapture = (s_edgeCount >= MAX_EDGES - 1);
+    bool detectCapture = isValidTembedBurst(s_edgeCount, activeUs, maxUs);
+    bool copyCapture = detectCapture;
+    s_hasCap = fullCapture || detectCapture || (allowRawKeep && copyCapture);
+    if (!keepCapture) s_hasCap = false;
+    if (T_EMBED_RX_DEBUG) {
+        Serial.printf("[tembed-rx] stop keep=%d edges=%d burst=%lu full=%d detectCap=%d copyCap=%d hasCap=%d rawKeep=%d\n",
+                      keepCapture ? 1 : 0,
+                      s_edgeCount,
+                      (unsigned long)activeUs,
+                      fullCapture ? 1 : 0,
+                      detectCapture ? 1 : 0,
+                      copyCapture ? 1 : 0,
+                      s_hasCap ? 1 : 0,
+                      allowRawKeep ? 1 : 0);
+    }
+    if (!s_hasCap) { clearCaptureState(); return; }
+    s_lastSignalCount++;
+    uint16_t minP = 0xFFFF, maxP = 0;
+    for (int i = 0; i < s_edgeCount; i++) {
+        if (s_edges[i] < minP) minP = s_edges[i];
+        if (s_edges[i] > maxP) maxP = s_edges[i];
+    }
+    s_detectMinPulse = (minP == 0xFFFF) ? 0 : minP;
+    s_detectMaxPulse = maxP;
+    s_detectBurstUs  = activeUs;
+    s_detectRepeats  = 1;
+    strcpy(s_detectMod, "OOK/ASK raw");
+    snprintf(s_lastProtocol, sizeof(s_lastProtocol), "RAW(%d)", s_edgeCount);
+    snprintf(s_lastSummary, sizeof(s_lastSummary), "%d edges", s_edgeCount);
+    strcpy(s_lastCrc, "raw capture");
+    s_lastDecoded   = 0;
+    s_lastBitLength = 0;
+    s_lastPulse = s_edgeCount ? (uint16_t)(activeUs / (uint32_t)s_edgeCount) : 0;
+}
+#endif
+
 static String rfCaptureFilename() {
     char fallback[32];
     snprintf(fallback, sizeof(fallback), "/rf_%08lu.txt", millis());
@@ -258,22 +581,34 @@ static bool beginSdAccess() {
     delay(20);
     pinMode(CC1101_CS_PIN, OUTPUT);
     digitalWrite(CC1101_CS_PIN, HIGH);
+#if NRF24_CSN_PIN >= 0
     pinMode(NRF24_CSN_PIN, OUTPUT);
     digitalWrite(NRF24_CSN_PIN, HIGH);
+#endif
     pinMode(SD_CS_PIN, OUTPUT);
     digitalWrite(SD_CS_PIN, HIGH);
     SD.end();
+#ifndef BOARD_TEMBED
     SPI.end();
     delay(5);
     SPI.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, SD_CS_PIN);
+#else
+    delay(5);
+    // LovyanGFX owns SPI2_HOST — don't teardown; CC1101 init already called SPI.begin()
+#endif
     return SD.begin(SD_CS_PIN, SPI, 25000000);
 }
 
 static void endSdAccessAndRestoreRf() {
     SD.end();
+#ifndef BOARD_TEMBED
     SPI.end();
     delay(5);
     configOokRx(capFreq());
+#else
+    delay(5);
+    s_inited = false;  // force CC1101 re-init; caller must call initChip() to restore
+#endif
 }
 
 static bool saveCaptureToSd() {
@@ -540,8 +875,12 @@ static void drawDetect() {
     d.setTextSize(1);
     d.setTextColor(0xD8F0A8, 0x112000);
     d.setCursor(2, 3);
-    char hdr[40];
+    char hdr[48];
+#ifdef BOARD_TEMBED
+    snprintf(hdr, sizeof(hdr), "RF Detect  %s  %.3fMHz", bandName(), capFreq());
+#else
     snprintf(hdr, sizeof(hdr), "RF Detect  %.3fMHz", capFreq());
+#endif
     d.print(hdr);
 
     if (s_capturing) {
@@ -581,7 +920,11 @@ static void drawDetect() {
         d.setTextColor(C_FG, C_BG);
         d.setCursor(8, 84); d.print("Press Enter to start.");
         d.setTextColor(C_DIM, C_BG);
+#ifdef BOARD_TEMBED
+        d.setCursor(8, 118); d.print("up/dn=band  Back=return");
+#else
         d.setCursor(8, 118); d.print("Back=return");
+#endif
     }
     drawToast();
 }
@@ -640,12 +983,18 @@ static void drawCapture() {
         snprintf(buf, sizeof(buf), "Total signals found: %lu", (unsigned long)s_lastSignalCount);
         d.setCursor(8, 102);
         d.print(buf);
+#ifdef BOARD_TEMBED
+        d.setTextColor(C_FG, C_BG);
+        d.setCursor(8, 118);
+        d.print("Ent=save  Del=clear");
+#else
         d.setTextColor(C_FG, C_BG);
         d.setCursor(8, 118);
         d.print("Ent=again fn+S=save");
         d.setTextColor(C_DIM, C_BG);
         d.setCursor(128, 118);
         d.print("Del=clr");
+#endif
     } else {
         char buf[64];
         d.setTextColor(C_DIM, C_BG);
@@ -672,6 +1021,9 @@ static void doReplay() {
     if (!s_hasCap || s_edgeCount < 2) return;
 
     idleChip();
+#ifdef BOARD_TEMBED
+    setAntennaSwitch(capFreq());
+#endif
     ELECHOUSE_cc1101.setMHZ(capFreq());
     ELECHOUSE_cc1101.setModulation(2);
     ELECHOUSE_cc1101.setDRate(50);
@@ -730,7 +1082,11 @@ static void drawReplay() {
         d.print("Enter=transmit (x3)");
         d.setTextColor(C_DIM, C_BG);
         d.setCursor(8, 72);
+#ifdef BOARD_TEMBED
+        d.print("Up/Dn=change band");
+#else
         d.print("L/R=change band");
+#endif
         d.setCursor(8, 104);
         d.print("Back=return");
     }
@@ -793,7 +1149,7 @@ static void drawInitError() {
     d.print("CC1101 not found!");
     d.setTextColor(C_DIM, C_BG);
     d.setCursor(8, 58);
-    d.print("Check PINGEQUA hat.");
+    d.print("Check CC1101 module.");
     d.setCursor(8, 80);
     d.print("Press any key...");
 }
@@ -811,23 +1167,37 @@ static void drawFreqInput() {
 
     d.setTextColor(C_DIM, C_BG);
     d.setCursor(8, 24);
-    d.print("Enter MHz  (300.000 - 928.000)");
+    d.print("Custom Frequency  (300-928 MHz)");
 
     d.drawRoundRect(6, 38, SCREEN_W - 12, 20, 3, C_ACCENT);
     d.setTextColor(C_INPUT, C_BG);
     d.setTextSize(2);
     char buf[14];
+#ifdef BOARD_TEMBED
+    snprintf(buf, sizeof(buf), "%.3f MHz", s_customMHz);
+#else
     snprintf(buf, sizeof(buf), "%s_", s_freqInput);
+#endif
     d.setCursor(12, 41);
     d.print(buf);
 
     d.setTextSize(1);
     d.setTextColor(C_DIM, C_BG);
     d.setCursor(8, 72);
+#ifdef BOARD_TEMBED
+    d.print("Up/Dn = tune +/-1 MHz");
+#else
     d.print("Digits + '.'   Bksp=delete");
+#endif
     d.setCursor(8, 86);
     d.print("Enter=confirm  Back=cancel");
 
+#ifdef BOARD_TEMBED
+    d.setTextColor(0x00EE44, C_BG);
+    snprintf(buf, sizeof(buf), "=> %.3f MHz", s_customMHz);
+    d.setCursor(8, 108);
+    d.print(buf);
+#else
     float f = atof(s_freqInput);
     if (f >= 300.0f && f <= 928.0f) {
         d.setTextColor(0x00EE44, C_BG);
@@ -839,6 +1209,7 @@ static void drawFreqInput() {
         d.setCursor(8, 108);
         d.print("Out of range!");
     }
+#endif
     drawToast();
 }
 
@@ -939,7 +1310,8 @@ void appCc1101Loop() {
             if (ev.up && s_menuSel > 0) { s_menuSel--; s_dirty = true; }
             if (ev.down && s_menuSel < N_MENU - 1) { s_menuSel++; s_dirty = true; }
             if (ev.enter) {
-                bool needsHw = (s_menuSel == 0 || s_menuSel == 1 || s_menuSel == 2 || s_menuSel == 3);
+                bool needsHw = (s_menuSel == 0 || s_menuSel == 1 ||
+                               s_menuSel == 2 || s_menuSel == 3);
                 if (needsHw && !initChip()) {
                     s_inited = false;
                     drawInitError();
@@ -948,11 +1320,29 @@ void appCc1101Loop() {
                 }
                 switch (s_menuSel) {
                     case 0: s_state = CC1101State::SPECTRUM; s_dirty = true; s_specFrameDirty = true; break;
-                    case 1: s_state = CC1101State::DETECT; s_dirty = true; break;
-                    case 2: s_state = CC1101State::CAPTURE; s_dirty = true; break;
+                    case 1:
+                        s_state = CC1101State::DETECT;
+                        s_dirty = true;
+#ifdef BOARD_TEMBED
+                        clearCaptureState();
+                        if (s_capturing) stopCaptureTembed(false);
+#endif
+                        break;
+                    case 2:
+                        s_state = CC1101State::CAPTURE;
+                        s_dirty = true;
+#ifdef BOARD_TEMBED
+                        clearCaptureState();
+                        if (s_capturing) stopCaptureTembed(false);
+#endif
+                        break;
                     case 3: loadReplayFileList(); s_state = CC1101State::REPLAY_LIST; s_dirty = true; break;
                     case 4: s_bandSel = (s_bandSel >= N_BANDS_PRESET - 1) ? 0 : s_bandSel + 1; s_dirty = true; break;
+#ifdef BOARD_TEMBED
+                    case 5: s_customMHz = capFreq(); s_state = CC1101State::FREQ_INPUT; s_dirty = true; break;
+#else
                     case 5: s_state = CC1101State::FREQ_INPUT; s_dirty = true; break;
+#endif
                 }
             }
             if (ev.left || ev.right) {
@@ -971,14 +1361,42 @@ void appCc1101Loop() {
                 s_dirty = false;
             }
             if (!s_spectrumConfigured) {
+#ifdef BOARD_TEMBED
+                s_specEdgeCount = 0;
+                startCaptureTembed();
+                s_spectrumConfigured = true;
+                s_lastWaveDraw = millis();
+                drawSpectrumBoxTembed();
+#else
                 configOokRx(capFreq());
                 s_spectrumConfigured = true;
                 s_lastSweep = millis();
+#endif
             }
-            if (millis() - s_lastWaveDraw > 20) {
+#ifdef BOARD_TEMBED
+            if (s_capturing) {
+                bool timeout = millis() - s_captureStart > 6000;
+                bool gotSignal = pollSpectrumCaptureTembed();
+                if (gotSignal || timeout) {
+                    stopCaptureTembed(gotSignal, true);
+                    if (gotSignal && s_hasCap) {
+                        s_specEdgeCount = s_edgeCount;
+                        for (int i = 0; i < s_specEdgeCount; i++) s_specEdges[i] = s_edges[i];
+                        drawSpectrumBoxTembed();
+                        s_lastWaveDraw = millis();
+                    }
+                    startCaptureTembed();
+                } else if (millis() - s_lastWaveDraw > 1000) {
+                    drawSpectrumBoxTembed();
+                    s_lastWaveDraw = millis();
+                }
+            }
+#else
+            if (millis() - s_lastWaveDraw > 50) {
                 drawSpectrumWaveform();
                 s_lastWaveDraw = millis();
             }
+#endif
             if (!ev.changed) return;
             if (ev.back) {
                 disableReceiver();
@@ -988,12 +1406,25 @@ void appCc1101Loop() {
                 s_dirty = true;
                 return;
             }
+#ifdef BOARD_TEMBED
+            if (ev.up || ev.down) {
+                if (s_capturing) {
+                    detachInterrupt(digitalPinToInterrupt(CC1101_GDO0_PIN));
+                    s_capturing = false;
+                }
+                s_bandSel = (s_bandSel + N_BANDS_PRESET + (ev.down ? 1 : -1)) % N_BANDS_PRESET;
+                s_spectrumConfigured = false;
+                s_specFrameDirty = true;
+                s_dirty = true;
+            }
+#else
             if (ev.left || ev.right) {
                 s_bandSel = (s_bandSel + N_BANDS_PRESET + (ev.right ? 1 : -1)) % N_BANDS_PRESET;
                 s_spectrumConfigured = false;
                 s_specFrameDirty = true;
                 s_dirty = true;
             }
+#endif
             break;
 
         case CC1101State::DETECT:
@@ -1003,12 +1434,21 @@ void appCc1101Loop() {
             }
             if (s_capturing) {
                 bool timeout = (millis() - s_captureStart > 10000);
-                bool gotSignal = pollCapture();
+#ifdef BOARD_TEMBED
+                bool gotSignal = pollCaptureTembed(false);
                 if (gotSignal || timeout) {
-                    stopCapture();
-                    s_dirty = true;
+                    stopCaptureTembed(gotSignal, true);
+                    if (gotSignal && s_hasCap) {
+                        s_dirty = true;
+                    } else {
+                        startCaptureTembed();
+                    }
                     return;
                 }
+#else
+                bool gotSignal = pollCapture();
+                if (gotSignal || timeout) { stopCapture(); s_dirty = true; return; }
+#endif
                 static uint32_t lastDetectRefresh = 0;
                 if (millis() - lastDetectRefresh > 200) {
                     lastDetectRefresh = millis();
@@ -1017,7 +1457,12 @@ void appCc1101Loop() {
             }
             if (!ev.changed) return;
             if (ev.back) {
+#ifdef BOARD_TEMBED
+                if (s_capturing) stopCaptureTembed();
+#else
                 if (s_capturing) stopCapture();
+#endif
+                clearCaptureState();
                 disableReceiver();
                 idleChip();
                 s_state = CC1101State::MENU;
@@ -1031,13 +1476,28 @@ void appCc1101Loop() {
             }
             if (ev.enter) {
                 if (s_capturing) {
+#ifdef BOARD_TEMBED
+                    stopCaptureTembed();
+#else
                     stopCapture();
+#endif
                     s_dirty = true;
                 } else {
+#ifdef BOARD_TEMBED
+                    clearCaptureState();
+                    startCaptureTembed();
+#else
                     startCapture();
+#endif
                     s_dirty = true;
                 }
             }
+#ifdef BOARD_TEMBED
+            if ((ev.up || ev.down) && !s_capturing) {
+                s_bandSel = (s_bandSel + N_BANDS_PRESET + (ev.down ? 1 : -1)) % N_BANDS_PRESET;
+                s_dirty = true;
+            }
+#endif
             break;
 
         case CC1101State::CAPTURE:
@@ -1047,12 +1507,21 @@ void appCc1101Loop() {
             }
             if (s_capturing) {
                 bool timeout = (millis() - s_captureStart > 10000);
+#ifdef BOARD_TEMBED
+                bool gotSignal = pollCaptureTembed(true);
+                if (gotSignal || timeout) {
+                    stopCaptureTembed(gotSignal, true);
+                    s_dirty = true;
+                    return;
+                }
+#else
                 bool gotSignal = pollCapture();
                 if (gotSignal || timeout) {
                     stopCapture();
                     s_dirty = true;
                     return;
                 }
+#endif
                 static uint32_t lastRefresh = 0;
                 if (millis() - lastRefresh > 200) {
                     lastRefresh = millis();
@@ -1061,8 +1530,13 @@ void appCc1101Loop() {
             }
             if (!ev.changed) return;
             if (ev.back) {
+#ifdef BOARD_TEMBED
+                if (s_capturing) stopCaptureTembed();
+#else
                 if (s_capturing) stopCapture();
                 disableReceiver();
+#endif
+                clearCaptureState();
                 idleChip();
                 s_state = CC1101State::MENU;
                 s_dirty = true;
@@ -1073,6 +1547,7 @@ void appCc1101Loop() {
                 s_dirty = true;
                 return;
             }
+#ifndef BOARD_TEMBED
             if (ev.fnKey && s_hasCap) {
                 for (char c : ev.chars) {
                     if (c == 's' || c == 'S') {
@@ -1087,12 +1562,31 @@ void appCc1101Loop() {
                     }
                 }
             }
+#endif
             if (ev.enter) {
                 if (s_capturing) {
+#ifdef BOARD_TEMBED
+                    stopCaptureTembed();
+#else
                     stopCapture();
+#endif
                     s_dirty = true;
                 } else {
+#ifdef BOARD_TEMBED
+                    if (s_hasCap && s_edgeCount >= 2) {
+                        if (saveCaptureToSd()) {
+                            showToast("Saved: " + s_lastSaveFile.substring(s_lastSaveFile.lastIndexOf('/') + 1));
+                            initChip();
+                        } else {
+                            showToast("Save failed");
+                        }
+                    } else {
+                        clearCaptureState();
+                        startCaptureTembed();
+                    }
+#else
                     startCapture();
+#endif
                     s_dirty = true;
                 }
             }
@@ -1120,10 +1614,17 @@ void appCc1101Loop() {
                 doReplay();
                 s_dirty = true;
             }
+#ifdef BOARD_TEMBED
+            if (ev.up || ev.down) {
+                s_bandSel = (s_bandSel + N_BANDS_PRESET + (ev.down ? 1 : -1)) % N_BANDS_PRESET;
+                s_dirty = true;
+            }
+#else
             if (ev.left || ev.right) {
                 s_bandSel = (s_bandSel + N_BANDS_PRESET + (ev.right ? 1 : -1)) % N_BANDS_PRESET;
                 s_dirty = true;
             }
+#endif
             break;
 
         case CC1101State::REPLAY_LIST:
@@ -1141,6 +1642,9 @@ void appCc1101Loop() {
             if (ev.down && s_replayFileSel < s_replayFileCount - 1) { s_replayFileSel++; s_dirty = true; return; }
             if (ev.enter && s_replayFileCount > 0) {
                 if (loadCaptureFromFile(s_replayFiles[s_replayFileSel])) {
+#ifdef BOARD_TEMBED
+                    initChip();   // re-init CC1101 after SD access before replay
+#endif
                     s_state = CC1101State::REPLAY;
                     s_dirty = true;
                 } else {
@@ -1157,6 +1661,24 @@ void appCc1101Loop() {
                 s_dirty = false;
             }
             if (!ev.changed) return;
+#ifdef BOARD_TEMBED
+            if (ev.back) {
+                s_state = CC1101State::MENU;
+                s_dirty = true;
+                return;
+            }
+            if (ev.enter) {
+                s_bandSel = N_BANDS - 1;
+                s_state = CC1101State::MENU;
+                s_dirty = true;
+                return;
+            }
+            if (ev.up || ev.down) {
+                float step = ev.up ? 1.0f : -1.0f;
+                s_customMHz = constrain(s_customMHz + step, 300.0f, 928.0f);
+                s_dirty = true;
+            }
+#else
             if (ev.back) {
                 if (s_freqLen > 0) {
                     s_freqInput[--s_freqLen] = '\0';
@@ -1190,6 +1712,17 @@ void appCc1101Loop() {
                     s_dirty = true;
                 }
             }
+#endif
             break;
     }
 }
+
+
+
+
+
+
+
+
+
+

@@ -9,6 +9,9 @@
 #include "input.h"
 #include "nav.h"
 #include "wifi_mgr.h"
+#ifdef BOARD_TEMBED
+#include "vkb_tembed.h"
+#endif
 
 // ── State ──────────────────────────────────────────────────────────────────
 
@@ -797,8 +800,28 @@ void appWifiLoop() {
                 for (char c:ev.chars) if (c=='d'||c=='D') { WifiMgr.disconnect(); s_dirty=true; break; }
             }
             if (ev.enter&&s_scanCount>0) {
+#ifdef BOARD_TEMBED
+                bool cancelled = false;
+                String pass = vkbInput("WiFi Password:", "", 64, &cancelled);
+                if (!cancelled) {
+                    auto& d = M5Cardputer.Display;
+                    d.fillScreen(C_BG); drawBar();
+                    d.setFont(&fonts::Font0); d.setTextSize(1); d.setTextColor(C_FG,C_BG);
+                    char buf[64]; snprintf(buf,sizeof(buf),"Connecting to %s...",s_scanSSID[s_scanSel].c_str());
+                    d.setCursor(4,STATUS_H+20); d.print(buf);
+                    WifiState r = WifiMgr.connect(s_scanSSID[s_scanSel], pass);
+                    d.setCursor(4,STATUS_H+36);
+                    if (r==WifiState::CONNECTED) {
+                        d.setTextColor((uint32_t)0x00CC00,C_BG);
+                        snprintf(buf,sizeof(buf),"Connected! %s",WifiMgr.localIP().c_str());
+                    } else { d.setTextColor(C_ERROR,C_BG); snprintf(buf,sizeof(buf),"Failed to connect."); }
+                    d.print(buf); delay(1400);
+                }
+                s_state=WifiToolState::WIFI_SCAN; s_dirty=true; break;
+#else
                 s_wifiPassBuf=""; s_wifiPassCursor=0; s_wifiPassEnteredAt=millis();
                 s_state=WifiToolState::WIFI_PASSWORD; s_dirty=true; break;
+#endif
             }
             if (ev.up&&s_scanSel>0) { s_scanSel--; if (s_scanSel<s_scanScroll) s_scanScroll=s_scanSel; s_dirty=true; }
             if (ev.down&&s_scanSel<s_scanCount-1) {
